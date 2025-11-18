@@ -1,0 +1,72 @@
+====================================================================================================
+
+.gitignore for Python Boilerplate Project
+
+This file tells Git which files and folders to intentionally ignore.
+
+CRITICAL: This file is designed to PREVENT you from accidentally committing
+
+sensitive credentials (like 'token.json') or large, unnecessary folders
+
+(like '.venv' or 'dist') to your repository.
+
+====================================================================================================
+
+--- Virtual Environment ---
+
+Ignore the entire virtual environment folder.
+
+.venv/
+venv/
+env/
+
+--- Credentials & Secrets ---
+
+NEVER commit your personal, generated token. This file contains your live login.
+
+credentials/token.json
+
+The 'credentials.json' is your "master key" from Google.
+
+It's better to add this manually on each machine than to commit it.
+
+Uncomment the line below if you agree (recommended).
+
+credentials/credentials.json
+
+Ignore local environment files (if you use them)
+
+.env
+
+--- Python Cache & Logs ---
+
+Ignore all Python bytecode cache folders
+
+pycache/
+*.py[cod]
+
+Ignore the log folder
+
+logs/
+
+--- Build & Distribution ---
+
+Ignore all PyInstaller build artifacts
+
+dist/
+build/
+*.spec
+
+--- OS-specific Junk Files ---
+
+.DS_Store
+Thumbs.db
+
+--- IDE-specific Folders ---
+
+.vscode/
+.idea/
+
+--- Jupyter Notebook ---
+
+.ipynb_checkpoints

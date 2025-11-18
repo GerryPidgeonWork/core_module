@@ -1,0 +1,11 @@
+{
+    "original_path": "C:\\Users\\GerryPidgeon\\AppData\\Local\\Temp\\tmprqgcp_xr\\sample.txt",
+    "backup_path": "C:\\Users\\GerryPidgeon\\CodingRepositoryWindows\\Python\\FinanceProjects\\Boilerplates\\core_module\\backups\\20251117_133549_sample.zip",
+    "timestamp": "20251117",
+    "compressed": true,
+    "original_suffix": ".txt",
+    "original_size_bytes": 16,
+    "backup_size_bytes": 136,
+    "retention_default_keep_latest": 10,
+    "original_hash_md5": null
+}

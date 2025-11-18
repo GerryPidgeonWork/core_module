@@ -1,0 +1,1 @@
+SELECT CURRENT_DATE() AS today, CURRENT_USER() AS user, '{label}' AS label;
