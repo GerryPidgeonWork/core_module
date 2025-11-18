@@ -45,6 +45,7 @@ if "" in sys.path:
 
 # --- Prevent creation of __pycache__ folders ---------------------------------------------------------
 sys.dont_write_bytecode = True
+# ====================================================================================================
 
 
 # ====================================================================================================
@@ -68,6 +69,7 @@ logger = get_logger(__name__)
 # --- Additional project-level imports (append below this line only) ----------------------------------
 from core.C01_set_file_paths import PROJECT_ROOT, LOGS_DIR, CONFIG_DIR
 from core.C04_config_loader import get_config
+# ====================================================================================================
 
 
 # ====================================================================================================
@@ -92,10 +94,10 @@ def validate_file_exists(file_path: str | Path) -> bool:
     """
     path = Path(file_path)
     if not path.exists() or not path.is_file():
-        logger.error("❌ File not found: %s", path)
+        logger.error("File not found: %s", path)
         raise FileNotFoundError(f"Required file not found: {path}")
 
-    logger.info("✅ File exists: %s", path)
+    logger.info("File exists: %s", path)
     return True
 
 
@@ -122,12 +124,12 @@ def validate_directory_exists(dir_path: str | Path, create_if_missing: bool = Fa
     if not path.exists():
         if create_if_missing:
             path.mkdir(parents=True, exist_ok=True)
-            logger.warning("📁 Directory created: %s", path)
+            logger.warning("Directory created: %s", path)
         else:
-            logger.error("❌ Directory not found: %s", path)
+            logger.error("Directory not found: %s", path)
             raise FileNotFoundError(f"Directory not found: {path}")
     else:
-        logger.info("✅ Directory exists: %s", path)
+        logger.info("Directory exists: %s", path)
 
     return True
 
@@ -155,10 +157,10 @@ def validate_required_columns(df: pd.DataFrame, required_cols: List[str]) -> boo
     """
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
-        logger.error("❌ Missing required columns: %s", missing)
+        logger.error("Missing required columns: %s", missing)
         raise ValueError(f"Missing required columns: {missing}")
 
-    logger.info("✅ All required columns present.")
+    logger.info("All required columns present.")
     return True
 
 
@@ -181,10 +183,10 @@ def validate_non_empty(data: Any, label: str = "Data") -> bool:
         - Commonly used in ETL pipelines.
     """
     if data is None or (hasattr(data, "__len__") and len(data) == 0):
-        logger.error("❌ %s is empty or None.", label)
+        logger.error("%s is empty or None.", label)
         raise ValueError(f"{label} cannot be empty.")
 
-    logger.info("✅ %s contains data.", label)
+    logger.info("%s contains data.", label)
     return True
 
 
@@ -207,14 +209,14 @@ def validate_numeric(df: pd.DataFrame, column: str) -> bool:
         - Uses pandas dtype inference for numeric detection.
     """
     if column not in df.columns:
-        logger.error("❌ Column '%s' not found in DataFrame.", column)
+        logger.error("Column '%s' not found in DataFrame.", column)
         raise ValueError(f"Column '{column}' not found in DataFrame.")
 
     if not pd.api.types.is_numeric_dtype(df[column]):
-        logger.error("❌ Column '%s' contains non-numeric data.", column)
+        logger.error("Column '%s' contains non-numeric data.", column)
         raise ValueError(f"Column '{column}' must contain numeric values.")
 
-    logger.info("✅ Column '%s' is numeric.", column)
+    logger.info("Column '%s' is numeric.", column)
     return True
 
 
@@ -249,10 +251,10 @@ def validate_config_keys(section: str, keys: List[str]) -> bool:
             missing.append(key)
 
     if missing:
-        logger.error("❌ Missing configuration keys in section '%s': %s", section, missing)
+        logger.error("Missing configuration keys in section '%s': %s", section, missing)
         raise KeyError(f"Missing configuration keys in section '{section}': {missing}")
 
-    logger.info("✅ All required config keys found in section '%s'.", section)
+    logger.info("All required config keys found in section '%s'.", section)
     return True
 
 
@@ -276,25 +278,29 @@ def validation_report(results: Dict[str, bool]) -> None:
     Notes:
         - Intended for diagnostics in ETL pipelines or batch processes.
     """
-    logger.info("🧾 Validation Summary Report:")
+    logger.info("Validation Summary Report:")
     for name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "PASS" if result else "FAIL"
         logger.info(" - %-30s : %s", name, status)
 
 
 # ====================================================================================================
-# 7. MAIN EXECUTION (SELF-TEST)
+# 7. MAIN EXECUTION (SELF-TEST — SAFE, TEMPORARY, NO REAL FILES)
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     init_logging()
     logger.info("C06_validation_utils self-test started.")
 
-    # File & directory validation
+    # File & directory validation using TEMP folder only
     try:
-        validate_directory_exists("test_dir", create_if_missing=True)
-        temp_file = Path("test_dir") / "test.csv"
-        temp_file.write_text("col1,col2\n1,2")
-        validate_file_exists(temp_file)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            test_file = tmp_dir / "test.csv"
+            test_file.write_text("col1,col2\n1,2")
+
+            validate_directory_exists(tmp_dir, create_if_missing=False)
+            validate_file_exists(test_file)
+
     except Exception as error:
         log_exception(error, context="File/Directory validation")
 
@@ -312,7 +318,7 @@ if __name__ == "__main__":
         if get_config("snowflake", "user", default=None) is not None:
             validate_config_keys("snowflake", ["user", "account"])
         else:
-            logger.info("ℹ️ Skipping config validation: 'snowflake' not present.")
+            logger.info("Skipping config validation: 'snowflake' not present.")
     except Exception as error:
         log_exception(error, context="Config validation")
 
