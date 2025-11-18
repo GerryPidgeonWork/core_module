@@ -5,54 +5,50 @@
 This file tells Git which files and folders to intentionally ignore.
 
 CRITICAL: This file is designed to PREVENT you from accidentally committing
-
 sensitive credentials (like 'token.json') or large, unnecessary folders
-
 (like '.venv' or 'dist') to your repository.
 
 ====================================================================================================
 
 --- Virtual Environment ---
 
-Ignore the entire virtual environment folder.
-
+# Ignore virtual environments
 .venv/
 venv/
 env/
 
 --- Credentials & Secrets ---
 
-NEVER commit your personal, generated token. This file contains your live login.
-
+# NEVER commit your personal Google OAuth token
 credentials/token.json
 
-The 'credentials.json' is your "master key" from Google.
+# Optional: also ignore the master OAuth credentials bundle
+# credentials/credentials.json
 
-It's better to add this manually on each machine than to commit it.
-
-Uncomment the line below if you agree (recommended).
-
-credentials/credentials.json
-
-Ignore local environment files (if you use them)
-
+# Ignore local environment config
 .env
 
 --- Python Cache & Logs ---
 
-Ignore all Python bytecode cache folders
-
-pycache/
+# Ignore Python bytecode and cache folders
+__pycache__/
 *.py[cod]
 
-Ignore the log folder
-
+# Ignore logs
 logs/
+
+--- Backups (project-generated) ---
+
+# Ignore all generated backups
+backups/*
+
+# BUT keep the package initialiser
+!backups/__init__.py
+
 
 --- Build & Distribution ---
 
-Ignore all PyInstaller build artifacts
-
+# Ignore PyInstaller artifacts
 dist/
 build/
 *.spec
@@ -69,4 +65,4 @@ Thumbs.db
 
 --- Jupyter Notebook ---
 
-.ipynb_checkpoints
+.ipynb_checkpoints/
