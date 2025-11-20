@@ -17,7 +17,7 @@
 #
 # ----------------------------------------------------------------------------------------------------
 # Author:       Gerry Pidgeon
-# Created:      2025-11-18
+# Created:      2025-11-18a
 # Project:      Core Modules (Audited)
 # ====================================================================================================
 
@@ -194,35 +194,77 @@ def format_date(d: date | datetime, fmt: str = DEFAULT_DATE_FORMAT) -> str:
     raise TypeError("Expected a date or datetime object.")
 
 
-def parse_date(date_str: str, fmt: str = DEFAULT_DATE_FORMAT) -> date:
+def parse_date(value: str, fmt: str | None = DEFAULT_DATE_FORMAT) -> date:
     """
     Description:
-        Parses a string into a date instance using the specified format
-        string.
+        Parses a string into a date instance using either:
+            • a specific format (fmt), OR
+            • automatic multi-format detection when fmt is None.
+
+        Option C behaviour:
+        - Attempts a list of known common formats silently.
+        - Only logs ONE error if all formats fail.
+        - No repeated error logs for each unsuccessful attempt.
+        - Ensures clean log output while retaining robust parsing.
 
     Args:
-        date_str (str): The input date in string form.
-        fmt (str): The format string used for parsing. Defaults to
-            DEFAULT_DATE_FORMAT (YYYY-MM-DD).
+        date_str (str): The input date as a string.
+        fmt (str): The specific format used for parsing.
+            If set to None, automatic multi-format detection is used.
+            Defaults to DEFAULT_DATE_FORMAT ("%Y-%m-%d").
 
     Returns:
-        date: The parsed date instance.
+        date: The successfully parsed date instance.
 
     Raises:
-        ValueError: If parsing fails due to invalid input or format
-            mismatch.
+        ValueError: Re-raised if all automatic parsing attempts fail.
 
     Notes:
-        - Parsing failures are logged with full traceback before being
-          re-raised.
-        - Use this helper instead of datetime.strptime() directly to
-          ensure consistent logging on failure.
+        - No per-format errors are logged to keep logs clean.
+        - Only a final consolidated error is logged with traceback info.
+        - Ensures predictable behaviour and full backwards compatibility.
     """
-    try:
-        return datetime.strptime(date_str, fmt).date()
-    except Exception as error:
-        log_exception(error, context=f"Parsing date '{date_str}' with format '{fmt}'")
-        raise
+
+    # If a specific format is provided → strict mode
+    if fmt is not None:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except Exception as error:
+            log_exception(
+                error,
+                context=f"Parsing date '{value}' with explicit format '{fmt}'"
+            )
+            raise
+
+    # -----------------------------------------
+    # Automatic multi-format detection (Option C)
+    # -----------------------------------------
+
+    common_formats = [
+        "%Y-%m-%d",      # 2022-03-16
+        "%d/%m/%Y",      # 16/03/2022
+        "%d-%m-%Y",      # 16-03-2022
+        "%d.%m.%Y",      # 16.03.2022
+        "%Y/%m/%d",      # 2022/03/16
+        "%m/%d/%Y",      # 03/16/2022
+        "%d-%b-%Y",      # 16-Mar-2022
+        "%d-%b-%y",      # 16-Mar-22
+        "%b %d, %Y",     # Mar 16, 2022
+        "%d %b %Y",      # 16 Mar 2022
+    ]
+
+    for test_fmt in common_formats:
+        try:
+            return datetime.strptime(value, test_fmt).date()
+        except Exception:
+            continue  # Silent fail — no noisy logs
+
+    # If no format matched → log once with full context + traceback
+    error = ValueError(
+        f"Could not parse date '{value}' using automatic format detection."
+    )
+    log_exception(error, context="parse_date auto-detection")
+    raise error
 
 
 # ====================================================================================================
@@ -501,11 +543,39 @@ if __name__ == "__main__":
     logger.info("Now: %s", as_str(get_now()))
     logger.info("Timestamp: %s", timestamp_now())
 
+    # ------------------------------------------------------------------
+    # DATE PARSING TESTS (Option C validation)
+    # ------------------------------------------------------------------
+    logger.info("Testing date parsing...")
+
+    # Strict mode (should match DEFAULT_DATE_FORMAT)
+    test_strict = today.strftime(DEFAULT_DATE_FORMAT)
+    parsed_strict = parse_date(test_strict)
+    logger.info("Strict parse (%s -> %s)", test_strict, as_str(parsed_strict))
+
+    # Auto-detection mode
+    autodetect_input = "16/03/2022"
+    parsed_auto = parse_date(autodetect_input, fmt=None)
+    logger.info("Auto-detected parse (%s -> %s)", autodetect_input, as_str(parsed_auto))
+
+    # Detection failure test (will log ONE clean error)
+    invalid_input = "not-a-date"
+    try:
+        parse_date(invalid_input, fmt=None)
+    except Exception:
+        logger.info("Correctly failed to parse invalid date '%s'", invalid_input)
+
+    # ------------------------------------------------------------------
+    # WEEK HELPERS
+    # ------------------------------------------------------------------
     week_start = get_start_of_week(today)
     week_end = get_end_of_week(today)
     logger.info("Start of week: %s", as_str(week_start))
     logger.info("End of week: %s", as_str(week_end))
 
+    # ------------------------------------------------------------------
+    # MONTH HELPERS
+    # ------------------------------------------------------------------
     m_start = get_start_of_month(today)
     m_end = get_end_of_month(today)
     logger.info("Start of month: %s", as_str(m_start))
@@ -521,9 +591,15 @@ if __name__ == "__main__":
         as_str(last_day),
     )
 
+    # ------------------------------------------------------------------
+    # REPORTING HELPERS
+    # ------------------------------------------------------------------
     logger.info("Fiscal quarter: %s", get_fiscal_quarter(today))
     logger.info("Week ID: %s", get_week_id(today))
 
+    # ------------------------------------------------------------------
+    # RANGE UTILITIES
+    # ------------------------------------------------------------------
     date_list = generate_date_range(week_start, week_end)
     logger.info(
         "Generated %d dates this week: %s",

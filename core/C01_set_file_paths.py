@@ -88,9 +88,10 @@ USER_HOME_DIR: Path = Path.home()
 # ====================================================================================================
 # 4. CORE DIRECTORIES
 # ----------------------------------------------------------------------------------------------------
+BINARY_FILES_DIR: Path = PROJECT_ROOT / "binary_files"
 CACHE_DIR: Path = PROJECT_ROOT / "cache"
-CORE_DIR: Path = PROJECT_ROOT / "core"
 CONFIG_DIR: Path = PROJECT_ROOT / "config"
+CORE_DIR: Path = PROJECT_ROOT / "core"
 CREDENTIALS_DIR: Path = PROJECT_ROOT / "credentials"
 DATA_DIR: Path = PROJECT_ROOT / "data"
 IMPLEMENTATION_DIR: Path = PROJECT_ROOT / "implementation"
@@ -99,12 +100,12 @@ MAIN_DIR: Path = PROJECT_ROOT / "main"
 OUTPUTS_DIR: Path = PROJECT_ROOT / "outputs"
 SCRATCHPAD_DIR: Path = PROJECT_ROOT / "scratchpad"
 SQL_DIR: Path = PROJECT_ROOT / "sql"
-BINARY_FILES_DIR: Path = PROJECT_ROOT / "binary_files"
 
 CORE_FOLDERS: tuple[Path, ...] = (
+    BINARY_FILES_DIR,
     CACHE_DIR,
-    CORE_DIR,
     CONFIG_DIR,
+    CORE_DIR,
     CREDENTIALS_DIR,
     DATA_DIR,
     IMPLEMENTATION_DIR,
@@ -112,8 +113,7 @@ CORE_FOLDERS: tuple[Path, ...] = (
     MAIN_DIR,
     OUTPUTS_DIR,
     SCRATCHPAD_DIR,
-    SQL_DIR,
-    BINARY_FILES_DIR,
+    SQL_DIR
 )
 
 
@@ -170,11 +170,7 @@ def build_path(*parts: str | Path) -> Path:
     return Path(*parts).resolve()
 
 
-def get_temp_file(
-    suffix: str = "",
-    prefix: str = "temp_",
-    directory: Path | None = None,
-) -> Path:
+def get_temp_file(suffix: str = "", prefix: str = "temp_", directory: Path | None = None,) -> Path:
     """
     Description:
         Generates a unique temporary file path without keeping the file on disk.
@@ -266,9 +262,10 @@ if __name__ == "__main__":
 
     logger.info("Core Folders:")
     for name, p in {
+        "BINARY_FILES_DIR": BINARY_FILES_DIR,
         "CACHE_DIR": CACHE_DIR,
-        "CORE_DIR": CORE_DIR,
         "CONFIG_DIR": CONFIG_DIR,
+        "CORE_DIR": CORE_DIR,
         "CREDENTIALS_DIR": CREDENTIALS_DIR,
         "DATA_DIR": DATA_DIR,
         "IMPLEMENTATION_DIR": IMPLEMENTATION_DIR,
@@ -276,8 +273,7 @@ if __name__ == "__main__":
         "MAIN_DIR": MAIN_DIR,
         "OUTPUTS_DIR": OUTPUTS_DIR,
         "SCRATCHPAD_DIR": SCRATCHPAD_DIR,
-        "SQL_DIR": SQL_DIR,
-        "BINARY_FILES_DIR": BINARY_FILES_DIR,
+        "SQL_DIR": SQL_DIR
     }.items():
         logger.info("  %s : %s", name.ljust(20), p)
 

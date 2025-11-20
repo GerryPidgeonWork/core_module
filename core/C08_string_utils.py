@@ -250,6 +250,68 @@ class StringUtils:
     # ------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def parse_number(value: Any) -> float | None:
+        """
+        Description:
+            Safely parses a numeric input into a float, handling common
+            formats encountered in financial/banking data:
+                - Commas (e.g. "1,234.56")
+                - Currency symbols (e.g. "£1,234.56", "GBP 123.45")
+                - Parentheses for negative values (e.g. "(123.45)")
+                - Leading/trailing whitespace
+                - Empty strings or invalid values (→ None)
+
+        Args:
+            value (Any):
+                Raw input value. May be str, int, float, or None.
+
+        Returns:
+            float | None:
+                Parsed float value, or None if the input cannot be parsed.
+
+        Raises:
+            None:
+                All errors are caught internally and logged.
+
+        Notes:
+            - Use validate_numeric() (C06) after cleaning if strict type
+              enforcement is required.
+            - Designed for permissive ETL pipelines where invalid inputs
+              should not crash the pipeline.
+        """
+        try:
+            if value is None:
+                return None
+
+            # Already numeric?
+            if isinstance(value, (int, float)):
+                return float(value)
+
+            text = str(value).strip()
+            if text == "":
+                return None
+
+            # Remove currency symbols and commas
+            cleaned = (
+                text.replace(",", "")
+                    .replace("GBP", "")
+                    .replace("£", "")
+                    .strip()
+            )
+
+            # Handle (123.45) → -123.45
+            if cleaned.startswith("(") and cleaned.endswith(")"):
+                cleaned = "-" + cleaned[1:-1]
+
+            return float(cleaned)
+
+        except Exception as exc:
+            log_exception(exc, context=f"parse_number(value={value})")
+            return None
+
+    # ------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def clean_filename_generic(original_name: str) -> str:
         """
         Description:
@@ -494,6 +556,26 @@ def generate_dated_filename(
         frequency=frequency,
     )
 
+def parse_number(value: Any) -> float | None:
+    """
+    Description:
+        Facade function delegating to StringUtils.parse_number() for
+        safely parsing numeric values from strings or mixed input types.
+
+    Args:
+        value (Any): Raw input to parse.
+
+    Returns:
+        float | None: Parsed numeric value or None if parsing fails.
+
+    Raises:
+        None.
+
+    Notes:
+        - Maintains consistency with function-style APIs.
+    """
+    return StringUtils.parse_number(value)
+
 
 # ====================================================================================================
 # 5. MAIN EXECUTION (SELF-TEST)
@@ -543,5 +625,21 @@ if __name__ == "__main__":
             end_date=date(2025, 11, 7),
         ),
     )
+
+    logger.info("🔢 Testing parse_number()...")
+
+    tests = {
+        "123": parse_number("123"),
+        "1,234.56": parse_number("1,234.56"),
+        "£1,234.56": parse_number("£1,234.56"),
+        "GBP 789.10": parse_number("GBP 789.10"),
+        "(123.45)": parse_number("(123.45)"),
+        "": parse_number(""),
+        None: parse_number(None),
+        "abc": parse_number("abc"),
+    }
+
+    for raw, cleaned in tests.items():
+        logger.info("parse_number(%r) -> %s", raw, cleaned)
 
     logger.info("✅ C08_string_utils self-test complete.")

@@ -133,6 +133,67 @@ def validate_directory_exists(dir_path: str | Path, create_if_missing: bool = Fa
 
     return True
 
+def dir_exists(path: str | Path) -> bool:
+    """
+    Description:
+        Checks whether a directory exists and returns a boolean instead of
+        raising an exception. This is a convenience wrapper around
+        validate_directory_exists() with exception suppression.
+
+    Args:
+        path (str | Path):
+            The directory path to test.
+
+    Returns:
+        bool:
+            True if the directory exists, otherwise False.
+
+    Raises:
+        None.
+
+    Notes:
+        - Never creates directories (create_if_missing=False).
+        - Suitable for conditional checks such as:
+            if dir_exists(INPUT_DIR):
+                ...
+    """
+    try:
+        validate_directory_exists(path, create_if_missing=False)
+        return True
+    except Exception:
+        return False
+    
+
+def file_exists(path: str | Path) -> bool:
+    """
+    Description:
+        Checks whether a file exists and returns a boolean instead of
+        raising an exception. This is a convenience wrapper around
+        validate_file_exists() with exception suppression.
+
+    Args:
+        path (str | Path):
+            Path to the file to test.
+
+    Returns:
+        bool:
+            True if the file exists, otherwise False.
+
+    Raises:
+        None.
+
+    Notes:
+        - Intended for safe 'does this file exist?' tests.
+        - Behaves differently from validate_file_exists(), which raises.
+        - Example use:
+              if file_exists(latest_export):
+                  ...
+    """
+    try:
+        validate_file_exists(path)
+        return True
+    except Exception:
+        return False
 
 # ====================================================================================================
 # 4. DATA VALIDATION (PANDAS)

@@ -105,11 +105,7 @@ original_stdout: Any = sys.stdout
 # ====================================================================================================
 # 4. LOGGING INITIALISATION
 # ----------------------------------------------------------------------------------------------------
-def init_logging(
-    log_directory: Path | None = None,
-    level: int = logging.INFO,
-    enable_console: bool = True,
-) -> None:
+def init_logging(log_directory: Path | None = None, level: int = logging.INFO, enable_console: bool = True,) -> None:
     """
     Description:
         Initialises application-wide logging in an idempotent manner.
@@ -138,11 +134,7 @@ def init_logging(
     configure_logging(log_directory=log_directory, level=level, enable_console=enable_console)
 
 
-def configure_logging(
-    log_directory: Path | None = None,
-    level: int = logging.INFO,
-    enable_console: bool = True,
-) -> Path | None:
+def configure_logging(log_directory: Path | None = None, level: int = logging.INFO, enable_console: bool = True,) -> Path | None:
     """
     Description:
         Configures the root logging system with file and optional console handlers.
@@ -345,11 +337,7 @@ def log_divider(level: str = "info", label: str = "", width: int = 80) -> None:
     divider_logger.log(getattr(logging, level.upper()), line)
 
 
-def log_exception(
-    exception: Exception,
-    logger_instance: logging.Logger | None = None,
-    context: str = "",
-) -> None:
+def log_exception(exception: Exception, logger_instance: logging.Logger | None = None, context: str = "",) -> None:
     """
     Description:
         Logs an exception including its full traceback.
