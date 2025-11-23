@@ -30,9 +30,12 @@
 # and prevent project-local paths from overriding installed site-packages.
 # ----------------------------------------------------------------------------------------------------
 
+# --- Future behaviour & type system enhancements -----------------------------------------------------
+from __future__ import annotations           # Future-proof type hinting (PEP 563 / PEP 649)
+
 # --- Required for dynamic path handling and safe importing of core modules ---------------------------
-import sys
-from pathlib import Path
+import sys                                   # Python interpreter access (path, environment, runtime)
+from pathlib import Path                     # Modern, object-oriented filesystem path handling
 
 # --- Ensure project root DOES NOT override site-packages --------------------------------------------
 project_root = str(Path(__file__).resolve().parent.parent)
@@ -45,7 +48,6 @@ if "" in sys.path:
 
 # --- Prevent creation of __pycache__ folders ---------------------------------------------------------
 sys.dont_write_bytecode = True
-# ====================================================================================================
 
 
 # ====================================================================================================

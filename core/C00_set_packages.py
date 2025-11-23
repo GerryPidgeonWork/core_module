@@ -26,9 +26,12 @@
 # and prevent project-local paths from overriding installed site-packages.
 # ----------------------------------------------------------------------------------------------------
 
+# --- Future behaviour & type system enhancements -----------------------------------------------------
+from __future__ import annotations           # Future-proof type hinting (PEP 563 / PEP 649)
+
 # --- Required for dynamic path handling and safe importing of core modules ---------------------------
-import sys
-from pathlib import Path
+import sys                                   # Python interpreter access (path, environment, runtime)
+from pathlib import Path                     # Modern, object-oriented filesystem path handling
 
 # --- Ensure project root DOES NOT override site-packages --------------------------------------------
 project_root = str(Path(__file__).resolve().parent.parent)
@@ -73,9 +76,12 @@ sys.dont_write_bytecode = True
 # Common Python standard-library modules likely to be used across many scripts.
 # These are guaranteed to exist in all Python environments.
 # ----------------------------------------------------------------------------------------------------
+
 import calendar                                          # Calendar utilities
 import contextlib                                        # Context manager utilities
 import csv                                               # CSV reader/writer
+import datetime as dt                                   # Primary datetime module (aliased)
+from datetime import date, timedelta, datetime          # Common date utilities
 import getpass                                           # Get current username (useful for WSL/paths)
 import glob                                              # Wildcard file matching
 import hashlib                                           # Standard library hashing (MD5/SHA families)
@@ -90,32 +96,32 @@ import re                                                # Regular expressions
 import shutil                                            # File/folder operations
 import subprocess                                        # Run system commands / processes
 import tempfile                                          # Temporary file/directory utilities
+from textwrap import dedent
 import threading                                         # Lightweight threading
 import time                                              # Timing utilities, sleep()
 import zipfile                                           # ZIP archive utilities
 
-import datetime as dt                                   # Primary datetime module (aliased)
-from datetime import date, timedelta, datetime          # Common date utilities
-
 from typing import (
-    Any,                # Generic placeholder type
-    Callable,           # Callable[..., T] — function/method signatures
-    Dict,               # Dictionary type annotation
-    List,               # List[T] — ordered, mutable sequences
-    Literal,            # Literal["A", "B"] — fixed allowed values
-    MutableMapping,     # Dict-like mutable mappings (e.g., config objects)
-    Optional,           # Optional[T] shorthand (T | None)
-    Tuple,              # Fixed-length tuple structures
-    Union,              # Union[A, B] — multiple allowed types
-    overload            # Function overload declarations for typing
+    Any,                                                # Generic placeholder type for arbitrary objects
+    Callable,                                           # Callable[..., T] — function/method signatures
+    Dict,                                               # Dict[K, V] — standard dictionary mapping
+    Iterable,                                           # Iterable[T] — object capable of returning its members one at a time
+    List,                                               # List[T] — ordered, mutable sequence
+    Literal,                                            # Literal["A", "B"] — restricts variable to specific fixed values
+    MutableMapping,                                     # MutableMapping[K, V] — dict-like structure supporting mutation
+    Optional,                                           # Optional[T] — shorthand for T | None
+    overload,                                           # @overload decorator — type-safe function overload declarations
+    Sequence,                                           # Sequence[T] — read-only ordered collection (list/tuple-like)
+    Type,                                               # Type[T] — type object for class T    
+    Tuple,                                              # Tuple[T1, T2] — fixed-length tuple structure
+    Union                                               # Union[A, B] — variable may be one of multiple types
 )
 
 from concurrent.futures import (
-    as_completed,                   # Iterate futures as they complete (progress-friendly)
-    ProcessPoolExecutor,            # Process-based (CPU-bound) task parallelism
-    ThreadPoolExecutor              # Thread-based parallel task execution
+    as_completed,                                       # Iterate futures as they complete (progress-friendly)
+    ProcessPoolExecutor,                                # Process-based (CPU-bound) task parallelism
+    ThreadPoolExecutor                                  # Thread-based parallel task execution
 )
-
 
 # ====================================================================================================
 # 4. THIRD-PARTY LIBRARIES
@@ -123,19 +129,19 @@ from concurrent.futures import (
 # Widely-used external libraries that support data handling, PDF processing, APIs, and DWH access.
 # These imports are global because they are used across multiple modules and projects.
 # ----------------------------------------------------------------------------------------------------
-import numpy as np                              # (pip install numpy) Numerical computing
-import pandas as pd                             # (pip install pandas) Tabular data analysis
-import requests                                 # (pip install requests) HTTP requests / APIs
+import numpy as np                                      # (pip install numpy) Numerical computing
+import pandas as pd                                     # (pip install pandas) Tabular data analysis
+import requests                                         # (pip install requests) HTTP requests / APIs
 
-from pdfminer.high_level import extract_text    # Fallback PDF text extractor
-import pdfplumber                               # (pip install pdfplumber) High-accuracy PDF extraction
-import PyPDF2                                   # (pip install PyPDF2) PDF merging/splitting
-import openpyxl                                 # (pip install openpyxl) Excel .xlsx reader/writer
+from pdfminer.high_level import extract_text            # Fallback PDF text extractor
+import pdfplumber                                       # (pip install pdfplumber) High-accuracy PDF extraction
+import PyPDF2                                           # (pip install PyPDF2) PDF merging/splitting
+import openpyxl                                         # (pip install openpyxl) Excel .xlsx reader/writer
 
-import snowflake.connector                      # (pip install snowflake-connector-python) Snowflake DWH
-import yaml                                     # (pip install pyyaml) YAML configuration parsing
+import snowflake.connector                              # (pip install snowflake-connector-python) Snowflake DWH
+import yaml                                             # (pip install pyyaml) YAML configuration parsing
 
-from tqdm import tqdm                           # (pip install tqdm) Progress bars for loops/tasks
+from tqdm import tqdm                                   # (pip install tqdm) Progress bars for loops/tasks
 
 
 # ====================================================================================================
@@ -151,13 +157,13 @@ from tqdm import tqdm                           # (pip install tqdm) Progress ba
 #   - online platform integrations (e.g., JustEat, PayPal, UberEats)
 #   - automated download tasks
 # ----------------------------------------------------------------------------------------------------
-from selenium import webdriver                               # Base driver interface
-from selenium.webdriver.common.by import By                  # Element locator strategies
-from selenium.webdriver.common.keys import Keys              # Keyboard control constants
-from selenium.webdriver.chrome.options import Options        # Chrome configuration (headless, flags)
-from selenium.webdriver.support.ui import WebDriverWait      # Explicit waiting for conditions
-from selenium.webdriver.support import expected_conditions as EC   # Element state conditions
-from webdriver_manager.chrome import ChromeDriverManager     # Auto-download & manage ChromeDriver
+from selenium import webdriver                                      # Base driver interface
+from selenium.webdriver.common.by import By                         # Element locator strategies
+from selenium.webdriver.common.keys import Keys                     # Keyboard control constants
+from selenium.webdriver.chrome.options import Options               # Chrome configuration (headless, flags)
+from selenium.webdriver.support.ui import WebDriverWait             # Explicit waiting for conditions
+from selenium.webdriver.support import expected_conditions as EC    # Element state conditions
+from webdriver_manager.chrome import ChromeDriverManager            # Auto-download & manage ChromeDriver
 
 
 # ====================================================================================================
@@ -176,13 +182,13 @@ from webdriver_manager.chrome import ChromeDriverManager     # Auto-download & m
 #   - file upload/download operations
 # Consolidation here ensures that all Google integrations use consistent authentication logic.
 # ----------------------------------------------------------------------------------------------------
-from google.auth.transport.requests import Request                    # Token refresh transport
-from google.oauth2.credentials import Credentials                     # OAuth2 credential wrapper
-from google_auth_oauthlib.flow import InstalledAppFlow                # Local OAuth login flow
-from googleapiclient.discovery import build                           # Google API service builder
-from googleapiclient.errors import HttpError                          # Common API error handler
+from google.auth.transport.requests import Request                  # Token refresh transport
+from google.oauth2.credentials import Credentials                   # OAuth2 credential wrapper
+from google_auth_oauthlib.flow import InstalledAppFlow              # Local OAuth login flow
+from googleapiclient.discovery import build                         # Google API service builder
+from googleapiclient.errors import HttpError                        # Common API error handler
 from googleapiclient.http import (
-    MediaFileUpload,              # Upload local files (Drive/Sheets/etc.)
-    MediaIoBaseUpload,            # Upload from file-like objects
-    MediaIoBaseDownload,          # Stream-download files (Google Drive)
+    MediaFileUpload,                                                # Upload local files (Drive/Sheets/etc.)
+    MediaIoBaseUpload,                                              # Upload from file-like objects
+    MediaIoBaseDownload                                             # Stream-download files (Google Drive)
 )
