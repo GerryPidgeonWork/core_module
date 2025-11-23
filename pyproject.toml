@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "core_module_copy"
+version = "1.0.0"
+description = "A robust Python/Tkinter boilerplate framework."
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.3",
+    "numpy>=1.26",
+    "tqdm>=4.66",
+    "requests>=2.32",
+    "pyyaml>=6.0.2",
+    "pdfplumber>=0.11",
+    "PyPDF2>=3.0",
+    "pdfminer.six>=20231228",
+    "openpyxl>=3.1",
+    "snowflake-connector-python[secure-local-storage]>=4.0",
+    "selenium>=4.25",
+    "webdriver-manager>=4.0",
+    "google-api-python-client>=2.100",
+    "google-auth>=2.40",
+    "google-auth-httplib2>=0.2",
+    "google-auth-oauthlib>=1.2",
+    "ttkbootstrap>=1.10.1",
+    "tkcalendar>=1.6.1"
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
