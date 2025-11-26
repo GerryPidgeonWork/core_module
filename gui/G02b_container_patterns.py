@@ -42,7 +42,7 @@
 #
 # Integration Notes:
 #   • Pattern frames use style names defined in:
-#         - G01a_style_engine      (ttk style definitions)
+#         - G01b_style_engine      (ttk style definitions)
 #         - G01a_style_config      (colour/spacing theme tokens)
 #   • If those styles are not active, ttk simply falls back to default themes.
 #   • Guaranteed safe: no BaseGUI dependency, no tkinter root creation, no side effects.
@@ -162,7 +162,7 @@ def create_bordered_container_grid(
     columnspan: int = 1,
     title: Optional[str] = None,
     sticky: str = "nsew",
-    heading_style: str = "SectionHeading.TLabel",
+    heading_style: str = "Primary.SectionHeading.Bold.TLabel",
     outer_style: str = "SectionOuter.TFrame",
     body_style: str = "SectionBody.TFrame",
     heading_padx: Tuple[int, int] = SECTION_HEADING_PADX,
@@ -258,7 +258,7 @@ def create_section_grid(
         columnspan=columnspan,
         title=title,
         sticky=sticky,
-        heading_style="SectionHeading.TLabel",
+        heading_style="Primary.SectionHeading.Bold.TLabel",
         outer_style="SectionOuter.TFrame",
         body_style="SectionBody.TFrame",
         heading_padx=SECTION_HEADING_PADX,
@@ -309,7 +309,7 @@ def create_card_grid(
         columnspan=columnspan,
         title=title,
         sticky=sticky,
-        heading_style="SectionHeading.TLabel",
+        heading_style="Secondary.SectionHeading.Bold.TLabel",
         outer_style=outer_style,
         body_style=body_style,
         heading_padx=(CARD_OUTER_PADX[0], CARD_OUTER_PADX[1]),
@@ -367,18 +367,36 @@ def create_two_column_body(
 # ====================================================================================================
 # 7. SELF-TEST / DEMO
 # ----------------------------------------------------------------------------------------------------
-def _demo() -> None:
+def demo() -> None:
     """
     Lightweight visual demo to verify the container patterns.
 
-    Opens a standard Tk window (no BaseGUI dependency) and shows a couple of
-    sections and cards so you can see padding/borders in context.
+    Description:
+        Opens a standard Tk window (no BaseGUI dependency) and shows a couple of
+        sections and cards so you can see padding/borders in context.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Raises:
+        None.
+
+    Notes:
+        - Developer-only; never called by production code.
     """
-    logger.info("=== G01e_container_patterns demo start ===")
+    init_logging()
+    logger.info("=== G02b_container_patterns demo start ===")
+
+    # Import style config for background colour
+    from gui.G01a_style_config import GUI_COLOUR_BG_PRIMARY
 
     root = tk.Tk()
-    root.title("G01e_container_patterns — Demo")
+    root.title("G02b_container_patterns — Demo")
     root.geometry("900x600")
+    root.configure(bg=GUI_COLOUR_BG_PRIMARY)
 
     # Try to apply project styles if available
     try:
@@ -386,16 +404,18 @@ def _demo() -> None:
 
         style = ttk.Style(root)
         configure_ttk_styles(style)
-        logger.info("[G01e] Project styles applied successfully.")
+        logger.info("[G02b] Project styles applied successfully.")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[G01e] Could not apply project styles: %s", exc)
+        logger.warning("[G02b] Could not apply project styles: %s", exc)
 
-    # Layout root
-    root.rowconfigure(0, weight=1)
-    root.columnconfigure(0, weight=1)
+    # Layout root - use pack for simpler full-window coverage
+    main = ttk.Frame(root, padding=20, style="SectionOuter.TFrame")
+    main.pack(fill="both", expand=True)
 
-    main = ttk.Frame(root, padding=20)
-    main.grid(row=0, column=0, sticky="nsew")
+    # Configure main grid for 2 columns and expandable rows
+    main.columnconfigure(0, weight=1)
+    main.columnconfigure(1, weight=1)
+    main.rowconfigure(2, weight=1)  # Let the card row expand
 
     # Example 1: Full-width section with 2-column body
     section = create_section_grid(
@@ -417,12 +437,13 @@ def _demo() -> None:
     ttk.Label(card1.body, text="Card A body content.").grid(row=0, column=0, sticky="w")
     ttk.Label(card2.body, text="Card B body content.").grid(row=0, column=0, sticky="w")
 
+    logger.info("=== G02b_container_patterns demo ready ===")
     root.mainloop()
-    logger.info("=== G01e_container_patterns demo end ===")
+    logger.info("=== G02b_container_patterns demo end ===")
 
 
 # ====================================================================================================
 # 8. MAIN GUARD
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    _demo()
+    demo()

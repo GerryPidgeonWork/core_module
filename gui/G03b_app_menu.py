@@ -232,16 +232,32 @@ class AppMenuBar:
 # 8. SANDBOX TEST
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
+    init_logging()
+    logger.info("=== G03b_app_menu.py — Sandbox Start ===")
+
     from gui.G01e_gui_base import BaseGUI
     from gui.G03a_navigation import BasePage, NavigationController
+    from gui.G01c_widget_primitives import make_label
 
     class DemoHome(BasePage):
         def build_page(self):
-            ttk.Label(self, text="🏠 Home Page").pack(pady=20)
+            make_label(
+                self,
+                "🏠 Home Page",
+                category="WindowHeading",
+                surface="Primary",
+                weight="Bold",
+            ).pack(pady=20)
 
     class DemoSettings(BasePage):
         def build_page(self):
-            ttk.Label(self, text="⚙ Settings Page").pack(pady=20)
+            make_label(
+                self,
+                "⚙ Settings Page",
+                category="WindowHeading",
+                surface="Primary",
+                weight="Bold",
+            ).pack(pady=20)
 
     # Create window
     app = BaseGUI(title="G03b Menu Sandbox", width=900, height=650)
@@ -255,4 +271,6 @@ if __name__ == "__main__":
     # Attach menu bar
     AppMenuBar(app, navigation=controller)
 
+    logger.info("=== G03b_app_menu.py — Entering mainloop ===")
     app.mainloop()
+    logger.info("=== G03b_app_menu.py — Sandbox End ===")

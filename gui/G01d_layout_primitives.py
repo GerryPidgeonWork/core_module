@@ -18,7 +18,7 @@
 #
 # Integration:
 #   - Styles come from G01b_style_engine.configure_ttk_styles(...)
-#       e.g., SectionHeading.TLabel, Heading2.TLabel, Body.TLabel
+#       e.g., SectionHeading.TLabel, Secondary.Bold.TLabel, Secondary.Normal.TLabel
 #   - Can optionally attach to a UI-factory class via:
 #         attach_primitives(UIComponents)
 #     allowing clean usage:
@@ -32,13 +32,13 @@
 #   - NO direct ttkbootstrap widget subclasses.
 #   - NO unsupported ttk options (e.g., background= on ttk widgets).
 #   - ZERO side effects at import time.
-#   - Metadata (_g01d_padding / _g01d_anchor) is attached for G02 layout helpers.
+#   - Metadata (g01d_padding / g01d_anchor) is attached for G02 layout helpers.
 #   - No creation of windows or geometry usage inside primitives.
 #
 # Notes:
 #   - Highly stable primitives used in all G03 page construction.
 #   - Debugging is available via DEBUG_LAYOUT_PRIMITIVES flag.
-#   - Self-test demo (_demo) is developer-only and isolated under __main__.
+#   - Self-test demo (demo) is developer-only and isolated under __main__.
 #
 # ----------------------------------------------------------------------------------------------------
 # Author:       Gerry Pidgeon
@@ -94,57 +94,78 @@ from core.C03_logging_handler import get_logger, log_exception, init_logging
 logger = get_logger(__name__)
 
 # --- Additional project-level imports (append below this line only) ----------------------------------
-from gui.G00a_gui_packages import tk, ttk, tkFont, scrolledtext
+from gui.G00a_gui_packages import tk, ttk
 from gui.G01a_style_config import *
+from gui.G01c_widget_primitives import (
+    make_label,
+    make_divider as g01c_make_divider,
+    make_spacer as g01c_make_spacer,
+)
 
-DEBUG_LAYOUT_PRIMITIVES = True
+
+DEBUG_LAYOUT_PRIMITIVES = False
 
 
 # ====================================================================================================
 # 3. CORE PRIMITIVES
 # ----------------------------------------------------------------------------------------------------
+# These primitives wrap G01c widget functions and add layout-specific metadata.
+# They provide a semantic layer for building page structure.
+# ----------------------------------------------------------------------------------------------------
+
 def heading(
     parent: ttk.Widget | tk.Widget,
     text: str,
     *,
-    style: str = "SectionHeading.TLabel",
+    surface: str = "Primary",
+    weight: str = "Bold",
     padding: tuple[int, int, int, int] | None = None,
     anchor: str = "w",
+    **kwargs: Any,
 ) -> ttk.Label:
     """
-    Create a primary heading label for section titles.
+    Create a section heading label for page/panel titles.
 
-    This is typically used at the top of a logical section or panel, and is expected
-    to use a dedicated heading style (e.g. SectionHeading.TLabel) provided by
-    G01a_style_engine.configure_ttk_styles(...).
+    Description:
+        Wraps G01c.make_label() with category="SectionHeading" and attaches
+        layout metadata (g01d_padding, g01d_anchor) for G02 layout helpers.
 
     Args:
-        parent:
+        parent (ttk.Widget | tk.Widget):
             Parent widget (Frame, TFrame, etc.) that will contain the heading.
-        text:
+        text (str):
             Heading text to display.
-        style:
-            ttk style name (default: 'SectionHeading.TLabel').
-        padding:
-            Optional (left, top, right, bottom) padding metadata to inform layout code.
-            This function does NOT call pack/grid/place — the caller is responsible.
-        anchor:
-            Logical alignment metadata ('w', 'center', 'e', etc.). Not used directly
-            by this function but stored on the widget for layout helpers.
+        surface (str):
+            Background surface context. "Primary" or "Secondary". Default: "Primary".
+        weight (str):
+            Font weight. "Normal" or "Bold". Default: "Bold".
+        padding (tuple[int, int, int, int] | None):
+            Optional (left, top, right, bottom) padding metadata for G02 helpers.
+        anchor (str):
+            Logical alignment metadata ('w', 'center', 'e', etc.). Stored but not applied.
+        **kwargs (Any):
+            Additional options passed to make_label().
 
     Returns:
         ttk.Label:
-            Unpacked label instance with metadata attributes:
-                • _g01d_padding
-                • _g01d_anchor
+            Label instance with metadata:
+                • g01d_padding
+                • g01d_anchor
+
+    Raises:
+        None.
+
+    Notes:
+        - The caller must still apply pack/grid/place.
+        - Layout helpers may inspect g01d_padding / g01d_anchor for spacing rules.
+        - Style generated: "{surface}.SectionHeading.{weight}.TLabel"
     """
     if DEBUG_LAYOUT_PRIMITIVES:
-        logger.debug("[G01c] Creating heading: %r (style=%s)", text, style)
+        logger.debug("[G01d] Creating heading: %r (surface=%s, weight=%s)", text, surface, weight)
 
-    lbl = ttk.Label(parent, text=text, style=style)
-    # Padding & anchor are for the caller's chosen geometry manager
-    lbl._g01d_padding = padding  # type: ignore[attr-defined]
-    lbl._g01d_anchor = anchor    # type: ignore[attr-defined]
+    lbl = make_label(parent, text, category="SectionHeading", surface=surface, weight=weight, **kwargs)
+    lbl.g01d_padding = padding  # type: ignore[attr-defined]
+    lbl.g01d_anchor = anchor    # type: ignore[attr-defined]
     return lbl
 
 
@@ -152,39 +173,53 @@ def subheading(
     parent: ttk.Widget | tk.Widget,
     text: str,
     *,
-    style: str = "Heading2.TLabel",
+    surface: str = "Primary",
+    weight: str = "Bold",
     padding: tuple[int, int, int, int] | None = None,
     anchor: str = "w",
+    **kwargs: Any,
 ) -> ttk.Label:
     """
-    Create a secondary heading label (e.g., subsection title).
+    Create a subsection heading (bold label).
 
-    Subheadings are intended for use within a section to group related controls or
-    smaller logical blocks, typically using a slightly smaller or lighter style than
-    the main section heading.
+    Description:
+        Wraps G01c.make_label() with category="Body" and bold weight.
+        Used for smaller headings within sections.
 
     Args:
-        parent:
+        parent (ttk.Widget | tk.Widget):
             Parent widget that will contain the subheading.
-        text:
-            Sub-heading text.
-        style:
-            ttk style name (default: 'Heading2.TLabel').
-        padding:
-            Optional padding metadata stored on the widget for external layout helpers.
-        anchor:
-            Logical alignment metadata (for layout helpers).
+        text (str):
+            Subheading text.
+        surface (str):
+            Background surface context. "Primary" or "Secondary". Default: "Primary".
+        weight (str):
+            Font weight. "Normal" or "Bold". Default: "Bold".
+        padding (tuple[int, int, int, int] | None):
+            Optional padding metadata for layout helpers.
+        anchor (str):
+            Logical alignment metadata for layout helpers.
+        **kwargs (Any):
+            Additional options passed to make_label().
 
     Returns:
         ttk.Label:
-            Unpacked label instance with _g01d_padding and _g01d_anchor metadata.
+            Label instance with metadata.
+
+    Raises:
+        None.
+
+    Notes:
+        - g01d_padding / g01d_anchor are stored but not applied.
+        - Caller chooses pack/grid.
+        - Style generated: "{surface}.{weight}.TLabel"
     """
     if DEBUG_LAYOUT_PRIMITIVES:
-        logger.debug("[G01c] Creating subheading: %r (style=%s)", text, style)
+        logger.debug("[G01d] Creating subheading: %r (surface=%s, weight=%s)", text, surface, weight)
 
-    lbl = ttk.Label(parent, text=text, style=style)
-    lbl._g01d_padding = padding  # type: ignore[attr-defined]
-    lbl._g01d_anchor = anchor    # type: ignore[attr-defined]
+    lbl = make_label(parent, text, category="Body", surface=surface, weight=weight, **kwargs)
+    lbl.g01d_padding = padding  # type: ignore[attr-defined]
+    lbl.g01d_anchor = anchor    # type: ignore[attr-defined]
     return lbl
 
 
@@ -192,116 +227,135 @@ def body_text(
     parent: ttk.Widget | tk.Widget,
     text: str,
     *,
-    style: str = "Body.TLabel",
+    surface: str = "Primary",
+    weight: str = "Normal",
     wraplength: int | None = None,
     justify: str = "left",
+    **kwargs: Any,
 ) -> ttk.Label:
     """
-    Create a standard body text label.
+    Create standard body text for general descriptive content.
 
-    Body text is used for descriptive copy, helper text, and instructions. The style
-    is expected to be a neutral text style (e.g. Body.TLabel) provided by the theme.
+    Description:
+        Wraps G01c.make_label() with category="Body" for paragraph/descriptive text.
 
     Args:
-        parent:
+        parent (ttk.Widget | tk.Widget):
             Parent widget.
-        text:
-            Body text content.
-        style:
-            ttk style name (default: 'Body.TLabel').
-        wraplength:
-            Optional wrap length in pixels. When set, long lines will wrap instead
-            of overflowing horizontally.
-        justify:
-            Text justification for multi-line text ('left', 'center', or 'right').
+        text (str):
+            Text content.
+        surface (str):
+            Background surface context. "Primary" or "Secondary". Default: "Primary".
+        weight (str):
+            Font weight. "Normal" or "Bold". Default: "Normal".
+        wraplength (int | None):
+            Optional wrap length in pixels.
+        justify (str):
+            Text justification: 'left', 'center', or 'right'. Default: "left".
+        **kwargs (Any):
+            Additional options passed to make_label().
 
     Returns:
         ttk.Label:
-            Unpacked label instance with the specified style and wrapping behaviour.
+            Label instance.
+
+    Raises:
+        None.
+
+    Notes:
+        - No g01d_* metadata attached; layout is explicit via pack/grid.
+        - Style generated: "{surface}.{weight}.TLabel"
     """
     if DEBUG_LAYOUT_PRIMITIVES:
-        logger.debug("[G01c] Creating body_text: %r (style=%s)", text, style)
+        logger.debug("[G01d] Creating body_text: %r (surface=%s, weight=%s)", text, surface, weight)
 
-    kwargs: dict[str, Any] = {
-        "text": text,
-        "style": style,
-        "justify": justify,
-    }
+    # Build extra kwargs for make_label
     if wraplength is not None:
         kwargs["wraplength"] = wraplength
+    kwargs["justify"] = justify
 
-    lbl = ttk.Label(parent, **kwargs)
-    return lbl
+    return make_label(parent, text, category="Body", surface=surface, weight=weight, **kwargs)
 
 
 def divider(
     parent: ttk.Widget | tk.Widget,
     *,
     orient: Literal["horizontal", "vertical"] = "horizontal",
+    height: int = 1,
     padding: tuple[int, int] | None = None,
-) -> ttk.Separator:
+) -> ttk.Frame:
     """
-    Create a simple divider line using ttk.Separator.
+    Create a simple divider line (thin separator).
 
-    Dividers are useful for visually separating groups of controls or sections within
-    a layout without introducing extra frames or complex styling.
+    Description:
+        Wraps G01c.make_divider() and attaches layout metadata.
+        For vertical dividers, uses width instead of height.
 
     Args:
-        parent:
+        parent (ttk.Widget | tk.Widget):
             Parent widget.
-        orient:
-            Separator orientation: 'horizontal' or 'vertical'.
-        padding:
-            Optional (padx, pady) metadata. The divider itself does not apply padding;
-            layout helpers can use this metadata to decide how to pack/grid the widget.
+        orient (Literal["horizontal", "vertical"]):
+            Orientation: 'horizontal' or 'vertical'. Default: "horizontal".
+        height (int):
+            Thickness in pixels. Default: 1.
+        padding (tuple[int, int] | None):
+            Optional (padx, pady) metadata for G02 helpers.
 
     Returns:
-        ttk.Separator:
-            Unpacked separator instance with _g01d_padding metadata.
+        ttk.Frame:
+            Divider frame with g01d_padding metadata.
+
+    Raises:
+        None.
+
+    Notes:
+        - Uses ToolbarDivider.TFrame style from G01b.
+        - Horizontal dividers use height; vertical dividers use width.
     """
     if DEBUG_LAYOUT_PRIMITIVES:
-        logger.debug("[G01c] Creating divider (orient=%s)", orient)
+        logger.debug("[G01d] Creating divider (orient=%s, height=%d)", orient, height)
 
-    sep = ttk.Separator(parent, orient=orient)
-    sep._g01d_padding = padding  # type: ignore[attr-defined]
-    return sep
+    if orient == "vertical":
+        # For vertical dividers, create a frame with width instead of height
+        div = ttk.Frame(parent, width=height, style="ToolbarDivider.TFrame")
+    else:
+        div = g01c_make_divider(parent, height=height)
+    
+    div.g01d_padding = padding  # type: ignore[attr-defined]
+    return div
 
 
 def spacer(
     parent: ttk.Widget | tk.Widget,
     *,
     height: int = 8,
-) -> tk.Frame:
+) -> ttk.Frame:
     """
-    Create a fixed-height vertical spacer using a plain tk.Frame.
+    Create a fixed-height vertical spacer.
 
-    A spacer introduces breathing room between stacked widgets without requiring
-    magic numbers inside pack/grid calls. Because a plain tk.Frame is used, we can
-    safely set a background colour without impacting ttk theme behaviour.
+    Description:
+        Wraps G01c.make_spacer() for vertical rhythm between content blocks.
 
     Args:
-        parent:
+        parent (ttk.Widget | tk.Widget):
             Parent widget.
-        height:
-            Height in pixels for the spacer.
+        height (int):
+            Spacer height in pixels. Default: 8.
 
     Returns:
-        tk.Frame:
-            Unpacked Frame instance with the specified fixed height.
+        ttk.Frame:
+            Fixed-height spacer frame.
+
+    Raises:
+        None.
+
+    Notes:
+        - Uses TFrame style from G01b for consistent theming.
     """
     if DEBUG_LAYOUT_PRIMITIVES:
-        logger.debug("[G01c] Creating spacer (height=%d)", height)
+        logger.debug("[G01d] Creating spacer (height=%d)", height)
 
-    frame = tk.Frame(
-        parent,
-        height=height,
-        bd=0,
-        highlightthickness=0,
-        bg=GUI_COLOUR_BG_PRIMARY,
-    )
-    # Prevent the frame from shrinking to fit children (there are none)
-    frame.pack_propagate(False)
-    return frame
+    return g01c_make_spacer(parent, height=height)
 
 
 # ====================================================================================================
@@ -335,132 +389,122 @@ def attach_primitives(ui_cls: Type[Any]) -> None:
         ui_cls:
             Class object to which the primitives should be attached. Typically a
             UI factory or helper class (e.g., UIComponents).
-    """
-    logger.info("[G01c] attach_primitives: Attaching layout primitives to %s", ui_cls.__name__)
 
-    def _ui_heading(self, parent, text: str, **kwargs):
+    Returns:
+        None.
+
+    Notes:
+        - This function mutates ui_cls by adding methods at runtime.
+    """
+    logger.info("[G01d] attach_primitives: Attaching layout primitives to %s", ui_cls.__name__)
+
+    def ui_heading(self, parent, text: str, **kwargs):
         return heading(parent, text, **kwargs)
 
-    def _ui_subheading(self, parent, text: str, **kwargs):
+    def ui_subheading(self, parent, text: str, **kwargs):
         return subheading(parent, text, **kwargs)
 
-    def _ui_body_text(self, parent, text: str, **kwargs):
+    def ui_body_text(self, parent, text: str, **kwargs):
         return body_text(parent, text, **kwargs)
 
-    def _ui_divider(self, parent, **kwargs):
+    def ui_divider(self, parent, **kwargs):
         return divider(parent, **kwargs)
 
-    def _ui_spacer(self, parent, **kwargs):
+    def ui_spacer(self, parent, **kwargs):
         return spacer(parent, **kwargs)
 
-    setattr(ui_cls, "heading", _ui_heading)
-    setattr(ui_cls, "subheading", _ui_subheading)
-    setattr(ui_cls, "body_text", _ui_body_text)
-    setattr(ui_cls, "divider", _ui_divider)
-    setattr(ui_cls, "spacer", _ui_spacer)
+    setattr(ui_cls, "heading", ui_heading)
+    setattr(ui_cls, "subheading", ui_subheading)
+    setattr(ui_cls, "body_text", ui_body_text)
+    setattr(ui_cls, "divider", ui_divider)
+    setattr(ui_cls, "spacer", ui_spacer)
 
-    logger.info("[G01c] attach_primitives: Layout primitives attached successfully.")
+    logger.info("[G01d] attach_primitives: Layout primitives attached successfully.")
 
 
 # ====================================================================================================
 # 5. SELF-TEST / ENHANCED DEMO
 # ----------------------------------------------------------------------------------------------------
-def _demo() -> None:
+def demo() -> None:
     """
-    Enhanced standalone demo to visualise the layout primitives in isolation.
+    Standalone demo to visualise the layout primitives.
 
-    Behaviour:
-        - Attempts to use G01a_style_engine.configure_ttk_styles(...) to apply
-          the full project theme.
-        - If G01a is not available, falls back to minimal local styles so the
-          demo remains usable.
-        - Demonstrates:
-            • heading / subheading / body_text
-            • divider / spacer
-            • Basic grid and pack layouts
+    Description:
+        Creates a two-column layout demonstrating all layout primitives
+        with proper styling from G01b.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Raises:
+        None.
+
+    Notes:
+        - Intended for developer diagnostics and visual inspection only.
+        - Uses G01b_style_engine.configure_ttk_styles() for full theme support.
     """
     logger.info("=== G01d_layout_primitives demo start ===")
 
     root = tk.Tk()
-    root.title("G01c Layout Primitives Demo")
-    root.geometry("780x520")
+    root.title("G01d Layout Primitives Demo")
+    root.geometry("800x600")
     root.configure(bg=GUI_COLOUR_BG_PRIMARY)
 
     # -----------------------------------------------------------------------------------------------
-    # 5.1 Style initialisation
+    # Style initialisation
     # -----------------------------------------------------------------------------------------------
     style = ttk.Style(root)
 
-    # Try to use the main style engine if available
     try:
-        from gui.G01a_style_engine import configure_ttk_styles  # type: ignore[import]
-
-        logger.info("[G01c] Demo: Applying styles via G01a_style_engine.configure_ttk_styles.")
-        configure_ttk_styles(style)  # type: ignore[arg-type]
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[G01c] Demo: Failed to import/apply G01a_style_engine; "
-            "falling back to lightweight local styles. Error: %s",
-            exc,
-        )
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
-
-        # Determine a safe base font from your project config
-        try:
-            base_family = GUI_FONT_FAMILY[0]  # type: ignore[index]
-        except Exception:
-            base_family = "Segoe UI"
-
-        # Minimal styles to keep the demo legible
-        style.configure("SectionHeading.TLabel", font=(base_family, 14, "bold"))
-        style.configure("Heading2.TLabel", font=(base_family, 12, "bold"))
-        style.configure("Body.TLabel", font=(base_family, 10))
+        from gui.G01b_style_engine import configure_ttk_styles
+        logger.info("[G01d] Demo: Applying styles via G01b_style_engine.")
+        configure_ttk_styles(style)
+    except Exception as exc:
+        logger.warning("[G01d] Demo: Failed to apply G01b styles: %s", exc)
+        style.theme_use("clam")
 
     # -----------------------------------------------------------------------------------------------
-    # 5.2 Layout: top-level container with two columns
+    # Main container with two columns
     # -----------------------------------------------------------------------------------------------
-    outer = ttk.Frame(root, padding=20)
+    outer = ttk.Frame(root, padding=10, style="SectionOuter.TFrame")
     outer.pack(fill="both", expand=True)
 
     outer.columnconfigure(0, weight=1)
-    outer.columnconfigure(1, weight=1)
+    outer.columnconfigure(1, weight=0)
+    outer.columnconfigure(2, weight=1)
     outer.rowconfigure(0, weight=1)
 
-    # Left column: primitive showcase
-    left = ttk.Frame(outer)
-    left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-
-    # Right column: usage notes / examples
-    right = ttk.Frame(outer)
-    right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
-
     # -----------------------------------------------------------------------------------------------
-    # 5.3 Left column – visual primitives
+    # Left column — Secondary surface demo
     # -----------------------------------------------------------------------------------------------
-    heading(left, "Layout Primitives — Visual Example").pack(anchor="w", pady=(0, 8))
+    left = ttk.Frame(outer, style="SectionBody.TFrame", padding=10)
+    left.grid(row=0, column=0, sticky="nsew")
 
-    subheading(left, "Headings & Text").pack(anchor="w", pady=(0, 4))
+    heading(left, "Layout Primitives — Secondary Surface", surface="Secondary").pack(
+        anchor="w", pady=(0, 8)
+    )
+
+    subheading(left, "Headings & Text", surface="Secondary").pack(anchor="w", pady=(0, 4))
 
     body_text(
         left,
-        "Use heading(...) for primary section titles and subheading(...) for "
-        "subsections within a block. body_text(...) is ideal for explanatory "
-        "copy that may need wrapping.",
+        "Use heading(...) for section titles and subheading(...) for "
+        "subsections. body_text(...) is for explanatory content.",
+        surface="Secondary",
         wraplength=340,
     ).pack(anchor="w", pady=(0, 8))
 
     divider(left).pack(fill="x", pady=(4, 8))
 
-    subheading(left, "Stacked Content With Spacers").pack(anchor="w", pady=(0, 4))
+    subheading(left, "Spacers & Dividers", surface="Secondary").pack(anchor="w", pady=(0, 4))
 
     body_text(
         left,
-        "Spacers are simple fixed-height frames that introduce breathing room "
-        "between groups of widgets without embedding magic numbers into pack/grid "
-        "calls.",
+        "Spacers create vertical breathing room. Dividers separate content blocks visually.",
+        surface="Secondary",
         wraplength=340,
     ).pack(anchor="w", pady=(0, 6))
 
@@ -468,90 +512,108 @@ def _demo() -> None:
 
     body_text(
         left,
-        "Below is another block of text separated by a spacer and a divider:",
+        "This text follows a 12px spacer.",
+        surface="Secondary",
         wraplength=340,
     ).pack(anchor="w", pady=(6, 4))
 
     divider(left).pack(fill="x", pady=(4, 8))
 
-    body_text(
-        left,
-        "End of left column demo.",
-        wraplength=340,
-    ).pack(anchor="w", pady=(0, 0))
+    body_text(left, "End of left column.", surface="Secondary").pack(anchor="w")
 
     # -----------------------------------------------------------------------------------------------
-    # 5.4 Right column – usage examples (code-style text)
+    # Vertical divider between columns
     # -----------------------------------------------------------------------------------------------
-    heading(right, "How to Use These Primitives").pack(anchor="w", pady=(0, 8))
+    divider_col = tk.Frame(outer, width=1, bg=GUI_COLOUR_DIVIDER)
+    divider_col.grid(row=0, column=1, sticky="ns", padx=4)
+
+    # -----------------------------------------------------------------------------------------------
+    # Right column — Primary surface demo
+    # -----------------------------------------------------------------------------------------------
+    right = ttk.Frame(outer, style="TFrame", padding=10)
+    right.grid(row=0, column=2, sticky="nsew")
+
+    heading(right, "How to Use These Primitives", surface="Primary").pack(
+        anchor="w", pady=(0, 8)
+    )
 
     body_text(
         right,
-        "The primitives are intentionally thin wrappers around tk/ttk widgets. "
-        "They do not perform any layout — you still choose pack/grid/place. "
-        "They only standardise styling and attach light metadata.",
+        "The primitives wrap G01c widgets and add layout metadata. "
+        "They standardise styling while you choose pack/grid/place.",
+        surface="Primary",
         wraplength=340,
     ).pack(anchor="w", pady=(0, 8))
 
-    subheading(right, "Example: Section Block").pack(anchor="w", pady=(0, 4))
+    subheading(right, "Example Usage", surface="Primary").pack(anchor="w", pady=(0, 4))
 
     body_text(
         right,
-        "Typical usage pattern for a section might look like:",
+        "Typical usage pattern:",
+        surface="Primary",
         wraplength=340,
     ).pack(anchor="w", pady=(0, 4))
 
-    # Use a plain tk.Text as a code-style box (keeps demo simple)
+    # Code example box
     code_box = tk.Text(
         right,
-        height=8,
+        height=10,
         wrap="word",
         bd=0,
-        relief="solid",
         padx=8,
         pady=6,
+        font=(GUI_FONT_FAMILY[0], GUI_FONT_SIZE_DEFAULT),
+        foreground=TEXT_COLOUR_SECONDARY,
         background=GUI_COLOUR_BG_SECONDARY,
+        highlightthickness=1,
+        highlightbackground=GUI_COLOUR_DIVIDER,
     )
-    code_box.pack(fill="both", expand=False, pady=(0, 8))
+    code_box.pack(fill="x", pady=(0, 8))
 
-    code_example = (
-        "from gui.G01d_layout_primitives import heading, subheading, body_text, divider, spacer\n\n"
-        "section = ttk.Frame(parent)\n"
-        "section.pack(fill='x', padx=8, pady=8)\n\n"
-        "heading(section, 'Connection Settings').pack(anchor='w')\n"
-        "subheading(section, 'Account details').pack(anchor='w', pady=(4, 2))\n"
-        "body_text(section, 'Enter your credentials and connection parameters.', "
-        "wraplength=320).pack(anchor='w', pady=(0, 6))\n"
-        "divider(section).pack(fill='x', pady=(4, 8))\n"
-        "spacer(section, height=12).pack(fill='x')\n"
-    )
+    code_example = """\
+from gui.G01d_layout_primitives import (
+    heading, subheading, body_text, divider, spacer
+)
+
+section = ttk.Frame(parent, style='SectionBody.TFrame')
+section.pack(fill='x', padx=8, pady=8)
+
+heading(section, 'Settings', surface='Secondary').pack(anchor='w')
+subheading(section, 'Account', surface='Secondary').pack(anchor='w')
+body_text(section, 'Enter credentials.', surface='Secondary').pack(anchor='w')
+divider(section).pack(fill='x', pady=8)
+spacer(section, height=12).pack(fill='x')
+"""
     code_box.insert("1.0", code_example)
     code_box.configure(state="disabled")
 
-    subheading(right, "Metadata for Layout Helpers").pack(anchor="w", pady=(4, 4))
+    subheading(right, "Metadata for Layout Helpers", surface="Primary").pack(
+        anchor="w", pady=(4, 4)
+    )
 
     body_text(
         right,
-        "heading(...) and subheading(...) attach _g01d_padding and _g01d_anchor "
-        "metadata to their label instances. Future layout helpers can use this "
-        "metadata to apply consistent spacing rules.",
+        "heading() and subheading() attach g01d_padding and g01d_anchor "
+        "metadata. Layout helpers (G02) can use this for consistent spacing.",
+        surface="Primary",
         wraplength=340,
     ).pack(anchor="w", pady=(0, 8))
 
     body_text(
         right,
-        "Try resizing the window to see how both columns grow. This module "
-        "focuses only on primitive building blocks; higher-level patterns live "
-        "in other G01x/G02x/G03x modules.",
+        "Try resizing the window to see responsive behaviour.",
+        surface="Primary",
         wraplength=340,
-    ).pack(anchor="w", pady=(0, 0))
+    ).pack(anchor="w")
 
-    logger.info("=== G01d_layout_primitives demo end ===")
+    logger.info("=== G01d_layout_primitives demo ready ===")
     root.mainloop()
+    logger.info("=== G01d_layout_primitives demo end ===")
 
 
 # ====================================================================================================
 # 6. MAIN GUARD
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    _demo()
+    init_logging()
+    demo()

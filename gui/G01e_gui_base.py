@@ -33,12 +33,14 @@
 #       MyWindow(title="Demo").mainloop()
 #
 # Architecture:
-#   - G00a_style_config:
+#   - G01a_style_config:
 #         Colours, fonts, spacing, frame sizes (design tokens).
-#   - G01a_style_engine:
+#   - G01b_style_engine:
 #         Named fonts + ttk style definitions based on tokens.
-#   - G01b/G01c/G01d:
-#         Widget primitives, layout primitives, layout frameworks.
+#   - G01c_widget_primitives:
+#         Widget factory functions (labels, buttons, entries, etc.).
+#   - G01d_layout_primitives:
+#         Layout building blocks (headings, body text, dividers, spacers).
 #   - G01e_gui_base (THIS MODULE):
 #         The window shell + scroll engine + style initialisation.
 #
@@ -107,7 +109,7 @@ logger = get_logger(__name__)
 
 # --- Additional project-level imports (append below this line only) ----------------------------------
 from core.C02_system_processes import detect_os
-from gui.G00a_gui_packages import tk, ttk, tkFont
+from gui.G00a_gui_packages import tk, ttk, tkFont, Style
 from gui.G01a_style_config import *
 from gui.G01b_style_engine import configure_ttk_styles
 
@@ -117,29 +119,47 @@ DEBUG_BASE_GUI: bool = True
 # ====================================================================================================
 # 3. BASE GUI CLASS
 # ----------------------------------------------------------------------------------------------------
+# The BaseGUI class defines the *window shell* for all GUI pages in the framework.
+#
+# Responsibilities:
+#     • Construct the Tk root window (title, geometry, background, minsize).
+#     • Initialise ttk/ttkbootstrap Style (delegating styling to G01a_style_engine).
+#     • Provide a scrollable main content area (Canvas → Scrollbar → inner frame).
+#     • Implement global mouse/trackpad scroll handling across platforms.
+#     • Provide per-widget scroll overrides for widgets with native yview support.
+#     • Expose clean utility methods (fullscreen, center_window, safe_close, etc.).
+#
+# Architectural Rules:
+#     • NO widgets created here — subclasses override build_widgets().
+#     • NO business logic.
+#     • All widgets must attach to self.main_frame (scrollable container).
+#     • All styling is delegated to configure_ttk_styles().
+#
+# Usage:
+#     from gui.G01e_gui_base import BaseGUI
+#
+#     class MyWindow(BaseGUI):
+#         def build_widgets(self):
+#             ttk.Label(self.main_frame, text="Hello World").pack()
+#
+#     if __name__ == "__main__":
+#         MyWindow(title="Demo").mainloop()
+# ====================================================================================================
 class BaseGUI(tk.Tk):  # type: ignore[name-defined]
     """
-    Standardised Tkinter root window for all GUIs in the framework.
+    Standardised Tkinter root window for all GUI windows in the framework.
 
-    Responsibilities:
-        - Configure geometry, title, and base background.
-        - Create ttk/ttkbootstrap Style and delegate all visual styling to
-          configure_ttk_styles(...) in G01a_style_engine.
-        - Provide a scrollable main content area (self.main_frame) embedded
-          in a Canvas + vertical ttk Scrollbar.
-        - Bind global mouse-wheel / trackpad scrolling for the main content.
-        - Provide optional per-widget scroll override for .yview-capable widgets
-          via bind_scroll_widget(...).
-        - Offer overridable build_widgets() hook for child classes.
+    This class creates:
+        • A fully styled Tk window (title, geometry, fonts, ttk styles).
+        • A vertical scrollable content region (Canvas + Scrollbar).
+        • An overridable build_widgets() hook for concrete pages.
+        • Cross-platform mouse-wheel / trackpad scrolling.
+        • Optional per-widget scroll override for Text/Listbox/etc.
 
-    Usage pattern:
-
-        class MyWindow(BaseGUI):
-            def build_widgets(self):
-                ttk.Label(self.main_frame, text="Hello World").pack(pady=10)
-
-        app = MyWindow(title="Demo")
-        app.mainloop()
+    Subclasses should:
+        • Override build_widgets().
+        • Attach all widgets to self.main_frame.
+        • Never manipulate the underlying Canvas/Scrollbar directly.
     """
 
     # ------------------------------------------------------------------------------------------------
@@ -151,24 +171,24 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
         resizable: bool = True,
     ):
         """
-        Initialise the base window and apply visual standards.
+        Initialise the window shell and scroll engine.
 
         Args:
-            title:
-                Window title text (default: FRAME_HEADING from G00a_style_config).
+            title (str):
+                Initial window title (default: FRAME_HEADING).
 
-            width:
-                Initial window width in pixels (default: FRAME_SIZE_H).
+            width (int):
+                Initial window width in pixels.
 
-            height:
-                Initial window height in pixels (default: FRAME_SIZE_V).
+            height (int):
+                Initial window height in pixels.
 
-            resizable:
-                Whether the window can be resized by the user (both directions).
+            resizable (bool):
+                Whether the user may resize the window horizontally/vertically.
         """
-        logger.info("=== BaseGUI.__init__ start ===")
+        logger.info("[G01e] === BaseGUI.__init__ start ===")
         logger.debug(
-            "[G01d] Requested window: title=%r width=%d height=%d resizable=%s",
+            "[G01e] Window request — title=%r width=%d height=%d resizable=%s",
             title,
             width,
             height,
@@ -177,168 +197,182 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
 
         super().__init__()
 
-        # Allow the root window to resize fully
+        # Root-level geometry + structure ------------------------------------------------------------
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        # --- Window configuration -------------------------------------------------------------------
         self.title(title)
         self.geometry(f"{width}x{height}")
         self.configure(bg=GUI_COLOUR_BG_PRIMARY)
         self.resizable(resizable, resizable)
         self.minsize(400, 300)
 
-        logger.debug("[G01d] Base window configured (geometry, bg, resizable, minsize).")
+        logger.debug("[G01e] Base window configured (geometry, colours, resizable, minsize).")
 
-        # --- Style configuration (ttk / ttkbootstrap) -----------------------------------------------
+        # Style initialisation -----------------------------------------------------------------------
         self.style = self.configure_styles()
 
-        # --- Scrollable root layout (Canvas + Scrollbar + main_frame) -------------------------------
+        # Scrollable layout --------------------------------------------------------------------------
         self.build_root_layout()
-        logger.debug("[G01d] Root scrollable layout built (canvas + scrollbar + main_frame).")
+        logger.debug("[G01e] Scrollable container built (canvas + scrollbar + main_frame).")
 
-        # --- Build actual window content ------------------------------------------------------------
+        # Subclass widget construction ---------------------------------------------------------------
         self.build_widgets()
-        logger.debug("[G01d] build_widgets() hook executed.")
+        logger.debug("[G01e] build_widgets() executed (subclass hook).")
 
-        # --- Center window on screen ----------------------------------------------------------------
+        # Window centring ---------------------------------------------------------------------------
         self.center_window(width, height)
-        logger.debug("[G01d] Window centered on screen.")
+        logger.debug("[G01e] Window centred on screen.")
 
-        # --- Bind global mouse-wheel / trackpad scroll for main window ------------------------------
+        # Global scroll handling ---------------------------------------------------------------------
         self.bind_global_scroll()
-        logger.debug("[G01d] Global scroll bindings applied.")
+        logger.debug("[G01e] Global scroll bindings applied.")
 
-        # --- Optional debug diagnostics -------------------------------------------------------------
+        # Optional diagnostics -----------------------------------------------------------------------
         if DEBUG_BASE_GUI:
             self.log_debug_diagnostics()
 
-        logger.info("=== BaseGUI.__init__ complete ===")
+        logger.info("[G01e] === BaseGUI.__init__ complete ===")
 
     # =================================================================================================
-    # 3.1 STYLE CONFIGURATION (DELEGATED TO G01a)
+    # 3.1 STYLE CONFIGURATION (delegated to G01a_style_engine)
     # =================================================================================================
     def configure_styles(self) -> ttk.Style:  # type: ignore[name-defined]
         """
-        Create and configure the ttk/ttkbootstrap Style instance for this window.
+        Create the ttk/ttkbootstrap Style instance for the window.
 
         Behaviour:
-            - Attempts to resolve a working font from GUI_FONT_FAMILY (G00a_style_config).
-            - Prefers ttkbootstrap.Style when available; otherwise falls back to ttk.Style.
-            - Delegates all widget styling rules to configure_ttk_styles(style)
-              in G01a_style_engine.
-            - Ensures the window background colour aligns with GUI_COLOUR_BG_PRIMARY.
-
-        Returns:
-            The active ttk.Style instance for this window.
+            • Identify a working font from GUI_FONT_FAMILY.
+            • If gui.G00a_gui_packages.Style is available, try to construct it
+              (this may be a ttkbootstrap.Style if enable_ttkbootstrap() was
+              called earlier).
+            • Fall back to ttk.Style(self) if Style is None or cannot be
+              constructed.
+            • For plain ttk.Style, normalise the theme to 'clam'.
+            • For ttkbootstrap.Style, preserve the bootstrap theme and do NOT
+              call theme_use().
+            • Delegate all ttk style configuration to configure_ttk_styles().
         """
-        logger.info("[G01d] Configuring ttk/ttkbootstrap styles...")
+        logger.info("[G01e] Configuring ttk styles...")
 
-        # --- Detect an installed font from the configured family sequence ---------------------------
+        # --- Font family resolution -----------------------------------------------------------------
         active_font_family: str | None = None
         font_candidates = (
             GUI_FONT_FAMILY
-            if isinstance(GUI_FONT_FAMILY, (tuple, list))
+            if isinstance(GUI_FONT_FAMILY, (list, tuple))
             else [GUI_FONT_FAMILY]
         )
-        logger.debug("[G01d] Font candidate sequence: %r", font_candidates)
+        logger.debug("[G01e] Font candidate list: %r", font_candidates)
 
         for fam in font_candidates:
             try:
-                _ = tkFont.Font(family=fam, size=GUI_FONT_SIZE_DEFAULT)  # type: ignore[name-defined]
+                _ = tkFont.Font(family=fam, size=GUI_FONT_SIZE_DEFAULT)
                 active_font_family = fam
-                logger.info("[G01d] Active GUI font family: %s", fam)
+                logger.info("[G01e] Using GUI font family: %s", fam)
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.debug("[G01d] Font '%s' not available: %s", fam, exc)
+                logger.debug("[G01e] Font '%s' unavailable (%s); trying next…", fam, exc)
 
         if not active_font_family:
-            # Fallback to a safe system default
             active_font_family = "Segoe UI"
             logger.warning(
-                "[G01d] No configured fonts available; falling back to %s",
+                "[G01e] No preferred fonts available; falling back to %s",
                 active_font_family,
             )
 
-        # Cache for downstream use if needed by subclasses
-        self.active_font_family = active_font_family  # type: ignore[attr-defined]
+        self.active_font_family = active_font_family  # cached for subclasses
 
-        # --- Create Style (prefer ttkbootstrap.Style if available) ----------------------------------
-        try:
-            style = Style(theme="flatly")  # type: ignore[name-defined]
-            logger.info("[G01d] Using ttkbootstrap.Style with theme 'flatly'.")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[G01d] ttkbootstrap Style not available (%s); falling back to ttk.Style",
-                exc,
+        # --- Create Style instance ------------------------------------------------------------------
+        style_obj: ttk.Style | Any
+        is_bootstrap_style = False
+
+        # If G00a has provided a Style symbol (potentially ttkbootstrap.Style),
+        # try to use it; otherwise fall back to plain ttk.Style.
+        if Style is not None:
+            try:
+                style_obj = Style(theme="flatly")  # type: ignore[name-defined]
+                style_module = type(style_obj).__module__
+                is_bootstrap_style = style_module.startswith("ttkbootstrap")
+                if is_bootstrap_style:
+                    logger.info("[G01e] Using ttkbootstrap.Style with theme 'flatly'.")
+                else:
+                    logger.info("[G01e] Using non-bootstrap Style from G00a_gui_packages.")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[G01e] Failed to construct Style(...) from G00a_gui_packages (%s); "
+                    "falling back to ttk.Style.",
+                    exc,
+                )
+                style_obj = ttk.Style(self)  # type: ignore[call-arg]
+        else:
+            logger.info("[G01e] gui.G00a_gui_packages.Style is None; using ttk.Style.")
+            style_obj = ttk.Style(self)  # type: ignore[call-arg]
+
+        if not is_bootstrap_style:
+            # Plain ttk.Style: normalise to 'clam' or a safe fallback theme.
+            try:
+                style_obj.theme_use("clam")
+                logger.info("[G01e] Theme set to 'clam' for plain ttk.Style.")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[G01e] Failed to set theme 'clam': %s", exc)
+        else:
+            # ttkbootstrap.Style: leave theme exactly as configured (e.g. 'flatly').
+            try:
+                current_theme = getattr(getattr(style_obj, "theme", None), "name", None)
+            except Exception:  # noqa: BLE001
+                current_theme = None
+            logger.info(
+                "[G01e] Detected ttkbootstrap.Style; preserving bootstrap theme %r.",
+                current_theme,
             )
-            style = ttk.Style(self)  # type: ignore[call-arg]
 
-        # --- Log and potentially normalise base theme ----------------------------------------------
+        # Delegate visual styles ----------------------------------------------------------------------
         try:
-            current_theme = style.theme_use()
-            logger.info("[G01d] Initial style theme: %s", current_theme)
+            configure_ttk_styles(style_obj)
+            logger.info("[G01e] configure_ttk_styles() applied successfully.")
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[G01d] Could not query current theme: %s", exc)
+            logger.exception("[G01e] Error applying configure_ttk_styles(): %s", exc)
 
-        # For plain ttk, prefer a neutral theme where possible.
-        try:
-            style.theme_use("clam")
-            logger.info("[G01d] Theme set to 'clam' for consistency.")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[G01d] Failed to set theme 'clam': %s", exc)
-
-        # --- Delegate all widget styling to G01a_style_engine --------------------------------------
-        try:
-            configure_ttk_styles(style)
-            logger.info("[G01d] configure_ttk_styles(...) completed successfully.")
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("[G01d] Error during configure_ttk_styles: %s", exc)
-
-        # Align root background with theme
+        # Ensure background colour consistency -------------------------------------------------------
         self.configure(bg=GUI_COLOUR_BG_PRIMARY)
 
-        return style
+        return style_obj
 
     # =================================================================================================
-    # 3.2 ROOT LAYOUT (SCROLLABLE CONTENT AREA)
+    # 3.2 ROOT LAYOUT (SCROLL ENGINE)
     # =================================================================================================
     def build_root_layout(self) -> None:
         """
-        Build the scrollable root layout used by all GUIs.
+        Create the scrollable GUI container.
 
         Structure:
-
-            self (BaseGUI / Tk)
+            self (Tk)
               └─ self.container (TFrame)
                    ├─ self.canvas (Canvas)
-                   │    └─ window -> self.main_frame (TFrame)
+                   │      └─ window → self.main_frame (TFrame)
                    └─ self.v_scrollbar (Vertical.TScrollbar)
 
         Notes:
-            - All child GUIs must attach their widgets to self.main_frame.
-            - The Canvas + Scrollbar combination provides vertical scrolling for
-              content that exceeds the visible window height.
+            • All widgets must attach to self.main_frame (not directly to root).
+            • Scrollregion auto-expands as widgets are added.
         """
-        logger.debug("[G01d] Building root scrollable layout...")
+        logger.debug("[G01e] Building scrollable root layout...")
 
-        # Container holds both canvas and scrollbar
-        self.container = ttk.Frame(self, padding=0)  # type: ignore[attr-defined]
+        # Outer frame --------------------------------------------------------------------------------
+        self.container = ttk.Frame(self, padding=0)
         self.container.pack(fill=tk.BOTH, expand=True)
-
-        # Ensure container expands horizontally
         self.container.columnconfigure(0, weight=1)
 
-        # Canvas provides the scrollable area
-        self.canvas = tk.Canvas(  # type: ignore[attr-defined]
+        # Canvas (scroll area) -----------------------------------------------------------------------
+        self.canvas = tk.Canvas(
             self.container,
             background=GUI_COLOUR_BG_PRIMARY,
             highlightthickness=0,
             bd=0,
         )
 
-        # Vertical scrollbar (styled via G01a_style_engine)
-        self.v_scrollbar = ttk.Scrollbar(  # type: ignore[attr-defined]
+        # Vertical scrollbar -------------------------------------------------------------------------
+        self.v_scrollbar = ttk.Scrollbar(
             self.container,
             orient="vertical",
             command=self.canvas.yview,
@@ -349,65 +383,84 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
         self.v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Main content frame inside the canvas
-        self.main_frame = ttk.Frame(self.canvas, padding=FRAME_PADDING)  # type: ignore[attr-defined]
-
-        # Allow main content frame to expand horizontally
+        # Inner content frame ------------------------------------------------------------------------
+        self.main_frame = ttk.Frame(self.canvas, padding=FRAME_PADDING)
         self.main_frame.columnconfigure(0, weight=1)
 
-        self._canvas_window_id = self.canvas.create_window(  # type: ignore[attr-defined]
+        self._canvas_window_id = self.canvas.create_window(
             (0, 0),
             window=self.main_frame,
             anchor="nw",
         )
 
-        # Ensure scrollregion and width adjust automatically
+        # Auto-sizing callbacks ----------------------------------------------------------------------
         self.main_frame.bind("<Configure>", self.on_frame_configure)
         self.canvas.bind("<Configure>", self.on_canvas_configure)
 
     # ------------------------------------------------------------------------------------------------
     def on_frame_configure(self, event) -> None:
         """
-        Update the scrollregion whenever the main_frame size changes.
+        Update scrollregion whenever the main_frame changes size.
 
-        Behaviour:
-            - The Canvas scrollregion is adjusted to the bounding box of all content.
-            - This keeps the scrollbar in sync with the full scrollable height.
+        Description:
+            Called automatically when main_frame is resized. Updates the canvas
+            scrollregion to encompass all content.
+
+        Args:
+            event: Tkinter Configure event (unused but required by binding).
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+
+        Notes:
+            - Bound to main_frame's <Configure> event in build_root_layout().
         """
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))  # type: ignore[attr-defined]
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     # ------------------------------------------------------------------------------------------------
     def on_canvas_configure(self, event) -> None:
         """
-        Keep the inner frame width in sync with the canvas width.
+        Synchronise main_frame width with canvas width.
 
-        Behaviour:
-            - When the Canvas is resized horizontally (e.g. user resizes window),
-              the embedded self.main_frame is stretched to match the new width.
-            - This avoids horizontal scrollbars and supports responsive layouts.
+        Description:
+            Called automatically when canvas is resized. Ensures the main_frame
+            expands horizontally to fill the available canvas width.
+
+        Args:
+            event: Tkinter Configure event containing new width.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+
+        Notes:
+            - Bound to canvas's <Configure> event in build_root_layout().
         """
         canvas_width = event.width
-        self.canvas.itemconfig(self._canvas_window_id, width=canvas_width)  # type: ignore[attr-defined]
-
-        # Ensure main_frame stretches to full available width
+        self.canvas.itemconfig(self._canvas_window_id, width=canvas_width)
         self.main_frame.configure(width=canvas_width)
 
     # =================================================================================================
-    # 3.3 GLOBAL SCROLL BINDINGS (MAIN WINDOW)
+    # 3.3 GLOBAL SCROLL BINDINGS
     # =================================================================================================
     def bind_global_scroll(self) -> None:
         """
-        Bind cross-platform mouse-wheel / trackpad scrolling for the main window.
+        Bind mouse-wheel / trackpad scrolling across platforms.
 
-        Behaviour:
-            - When the user scrolls and the event is not intercepted by a child widget,
-              the main Canvas (and therefore the whole window content) is scrolled.
-            - Platform-specific event sequences:
-                * Windows / macOS: <MouseWheel>
-                * Linux / X11:     <Button-4> (up) / <Button-5> (down)
+        Windows & macOS:
+            <MouseWheel>
+
+        Linux:
+            <Button-4> = Scroll up
+            <Button-5> = Scroll down
         """
         os_type = detect_os()
-        logger.info("[G01d] Binding global scroll handlers for OS: %s", os_type)
+        logger.info("[G01e] Setting up global scroll bindings (OS=%s)", os_type)
 
         if os_type in ("Windows", "MacOS"):
             self.bind_all("<MouseWheel>", self.on_global_mousewheel)
@@ -417,70 +470,47 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
 
     # ------------------------------------------------------------------------------------------------
     def on_global_mousewheel(self, event):
-        """
-        Handle mouse wheel scrolling for Windows and macOS at the window level.
-
-        Behaviour:
-            - Scrolls the main Canvas vertically.
-            - Only used when no child widget intercepts the event
-              (see bind_scroll_widget for per-widget overrides).
-        """
+        """Scroll canvas on Windows/macOS."""
         delta_raw = getattr(event, "delta", 0)
         delta = int(delta_raw / 120) if delta_raw else 0
-        if delta != 0:
-            self.canvas.yview_scroll(-delta, "units")  # type: ignore[attr-defined]
+        if delta:
+            self.canvas.yview_scroll(-delta, "units")
 
     # ------------------------------------------------------------------------------------------------
     def on_global_mousewheel_linux(self, event):
-        """
-        Handle mouse wheel scrolling on Linux using Button-4 / Button-5 events.
-
-        Behaviour:
-            - Button-4 → scroll up
-            - Button-5 → scroll down
-        """
+        """Scroll canvas on Linux using Button-4/5 events."""
         if event.num == 4:
-            self.canvas.yview_scroll(-3, "units")  # type: ignore[attr-defined]
+            self.canvas.yview_scroll(-3, "units")
         elif event.num == 5:
-            self.canvas.yview_scroll(3, "units")  # type: ignore[attr-defined]
+            self.canvas.yview_scroll(3, "units")
 
     # =================================================================================================
     # 3.4 PER-WIDGET SCROLL OVERRIDE
     # =================================================================================================
     def bind_scroll_widget(self, widget) -> None:
         """
-        Attach mouse-wheel / trackpad scrolling to a specific widget.
+        Assign mouse-wheel handling to a specific widget (Text, Listbox, etc.).
 
-        When the cursor is over the widget:
-            - Scroll events move that widget's content only
-              (e.g., Text, ScrolledText, Listbox, Treeview).
-            - The main window Canvas does NOT scroll while the event is handled.
+        When hovered:
+            • Scroll only the widget.
+            • Prevent scroll events from propagating to the main canvas.
 
-        When the cursor is not over such a widget:
-            - Global scroll bindings move the main window content.
-
-        Requirements:
-            - The widget must implement a .yview(...) method.
-
-        Usage:
-            console = make_textarea(self.main_frame, height=10)
-            console.pack(fill="both", expand=True)
-            self.bind_scroll_widget(console)
+        Requirement:
+            The widget must implement .yview().
         """
         if not hasattr(widget, "yview"):
-            logger.warning("[G01d] bind_scroll_widget called on non-scrollable widget: %r", widget)
+            logger.warning("[G01e] bind_scroll_widget called on non-scrollable widget: %r", widget)
             return
 
         os_type = detect_os()
-        logger.info("[G01d] Binding per-widget scroll for %r (OS=%s)", widget, os_type)
+        logger.info("[G01e] Binding per-widget scroll for %r (OS=%s)", widget, os_type)
 
-        # Inner handlers use closure over widget
         def _on_widget_mousewheel(event, w=widget):
             delta_raw = getattr(event, "delta", 0)
             delta = int(delta_raw / 120) if delta_raw else 0
             if delta:
                 w.yview_scroll(-delta, "units")
-            return "break"  # prevent global handler
+            return "break"
 
         def _on_widget_mousewheel_linux(event, w=widget):
             if event.num == 4:
@@ -500,48 +530,48 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
     # =================================================================================================
     def build_widgets(self) -> None:
         """
-        Placeholder method for constructing window widgets.
+        Subclasses override this to populate the GUI.
+
+        Description:
+            Hook method called during __init__ after the scroll engine is built.
+            Subclasses must override this to create their UI content.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
 
         Notes:
-            - Subclasses must override this method to define their GUI layout.
-            - All child widgets should be attached to self.main_frame (not directly to
-              the root window) so they benefit from the scrollable layout.
+            - All widgets must be created as children of self.main_frame.
+            - Do NOT attach widgets directly to self (the root window).
+            - The base implementation does nothing; override in subclass.
         """
-        logger.debug("[G01d] BaseGUI.build_widgets() — override in subclass.")
-        # Intentionally left blank.
+        logger.debug("[G01e] BaseGUI.build_widgets() — override in subclass.")
 
     # =================================================================================================
     # 3.6 WINDOW UTILITY METHODS
     # =================================================================================================
     def center_window(self, width: int, height: int) -> None:
-        """
-        Center the window on the screen based on its width and height.
-        """
+        """Center the window on the user’s screen."""
         self.update_idletasks()
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x_pos = (screen_width // 2) - (width // 2)
         y_pos = (screen_height // 2) - (height // 2)
         self.geometry(f"{width}x{height}+{x_pos}+{y_pos}")
-        logger.debug(
-            "[G01d] Window centered at %dx%d+%d+%d",
-            width,
-            height,
-            x_pos,
-            y_pos,
-        )
+        logger.debug("[G01e] Window centered at %dx%d+%d+%d", width, height, x_pos, y_pos)
 
     # ------------------------------------------------------------------------------------------------
     def open_fullscreen(self) -> None:
         """
-        Open the GUI in fullscreen/maximised mode in an OS-agnostic way.
-
-        Behaviour:
-            - Windows: uses the 'zoomed' state.
-            - macOS / Linux: uses the '-fullscreen' window attribute.
+        Enter fullscreen/maximised mode in a cross-platform way.
         """
         os_type = detect_os()
-        logger.info("[G01d] Request to enter fullscreen (OS=%s)", os_type)
+        logger.info("[G01e] Entering fullscreen (OS=%s)", os_type)
 
         try:
             if os_type == "Windows":
@@ -552,19 +582,13 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
             else:
                 self.state("zoomed")
         except Exception as exc:  # noqa: BLE001
-            logger.exception("[G01d] Failed to open fullscreen mode: %s", exc)
-            try:
-                self.state("zoomed")
-            except Exception:  # noqa: BLE001
-                pass
+            logger.exception("[G01e] Failed to enter fullscreen: %s", exc)
 
     # ------------------------------------------------------------------------------------------------
     def exit_fullscreen(self) -> None:
-        """
-        Exit fullscreen mode and restore normal windowed size.
-        """
+        """Exit fullscreen and return to normal size."""
         os_type = detect_os()
-        logger.info("[G01d] Request to exit fullscreen (OS=%s)", os_type)
+        logger.info("[G01e] Exiting fullscreen (OS=%s)", os_type)
 
         try:
             if os_type in ("MacOS", "Linux"):
@@ -573,24 +597,17 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
                 self.state("normal")
             self.update_idletasks()
         except Exception as exc:  # noqa: BLE001
-            logger.exception("[G01d] Failed to exit fullscreen mode: %s", exc)
+            logger.exception("[G01e] Failed to exit fullscreen: %s", exc)
 
     # ------------------------------------------------------------------------------------------------
     def safe_close(self) -> None:
-        """
-        Close the window safely, ensuring all resources are released.
-
-        Subclasses can override this method if additional cleanup is required
-        (threads, temporary files, background tasks, etc.).
-        """
-        logger.info("[G01d] safe_close() called; destroying window.")
+        """Close the window safely (override for cleanup if needed)."""
+        logger.info("[G01e] safe_close() called; destroying window.")
         self.destroy()
 
     # ------------------------------------------------------------------------------------------------
     def close(self) -> None:
-        """
-        Convenience alias for safe_close(), so all GUIs can use self.close().
-        """
+        """Convenience wrapper for safe_close()."""
         self.safe_close()
 
     # =================================================================================================
@@ -598,14 +615,14 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
     # =================================================================================================
     def log_debug_diagnostics(self) -> None:
         """
-        Emit detailed diagnostics about the GUI environment to the logger.
+        Emit diagnostics for debugging style/theme/font configuration.
 
-        Includes:
-            - Tk version
-            - Active ttk theme
-            - Available themes
-            - Active font family
-            - Presence checks for key styles
+        Logged:
+            • Tk version
+            • Active ttk theme
+            • Theme availability list
+            • Active font family
+            • Presence of critical ttk styles
         """
         try:
             tk_version = self.tk.call("info", "patchlevel")
@@ -619,14 +636,11 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
             active_theme = "unknown"
             available_themes = []
 
-        logger.debug("=== G01d Debug Diagnostics =====================================")
-        logger.debug("[G01d][DEBUG] Tk Version: %s", tk_version)
-        logger.debug("[G01d][DEBUG] Active ttk theme: %s", active_theme)
-        logger.debug("[G01d][DEBUG] Available themes: %r", available_themes)
-        logger.debug(
-            "[G01d][DEBUG] Active font family: %s",
-            getattr(self, "active_font_family", None),
-        )
+        logger.debug("=== [G01e] Debug Diagnostics =====================================")
+        logger.debug("[G01e] Tk Version: %s", tk_version)
+        logger.debug("[G01e] Active ttk theme: %s", active_theme)
+        logger.debug("[G01e] Available themes: %r", available_themes)
+        logger.debug("[G01e] Active font family: %s", getattr(self, "active_font_family", None))
 
         critical_styles = [
             "TLabel",
@@ -634,9 +648,13 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
             "TEntry",
             "TCombobox",
             "Vertical.TScrollbar",
+            "TFrame",
             "SectionBody.TFrame",
             "SectionOuter.TFrame",
-            "SectionHeading.TLabel",
+            "Primary.Normal.TLabel",
+            "Primary.Bold.TLabel",
+            "Primary.SectionHeading.Bold.TLabel",
+            "Secondary.Normal.TLabel",
         ]
 
         for style_name in critical_styles:
@@ -645,78 +663,82 @@ class BaseGUI(tk.Tk):  # type: ignore[name-defined]
                 _ = self.style.layout(style_name)
             except Exception:  # noqa: BLE001
                 exists = False
-            logger.debug("[G01d][DEBUG] Style '%s' defined: %s", style_name, exists)
+            logger.debug("[G01e] Style '%s' defined: %s", style_name, exists)
 
         logger.debug("================================================================")
 
-
 # ====================================================================================================
-# 4. SANDBOX TEST (OPTION A – New Architecture)
+# 4. SANDBOX TEST
 # ----------------------------------------------------------------------------------------------------
-#   Standalone test of the BaseGUI class and scroll behaviour, using ONLY the new
-#   G01x primitives (no legacy helpers, no UIComponents dependency).
-#
-#   Demonstrates:
-#       • Main window scroll with several labels.
-#       • Textarea that captures its own scroll events when hovered.
-#       • All styling coming from G00a + G01a.
+# A simple frame demonstrating BaseGUI behaviour using G01c/G01d primitives.
 # ====================================================================================================
 if __name__ == "__main__":
-    # Import primitives locally to avoid circular dependencies in normal use.
-    from gui.G01c_widget_primitives import (  # type: ignore[import]
-        make_heading,
-        make_label,
-        make_textarea,
-        make_divider,
-    )
+    init_logging()
 
-    class G01dTestGUI(BaseGUI):
-        """
-        Simple sandbox window to exercise BaseGUI behaviour:
-            - Global scroll of the main content.
-            - Per-widget scroll override for a text console.
-        """
+    # Local imports avoid circular dependencies in production
+    from gui.G01c_widget_primitives import make_label, make_textarea, make_divider
+
+    class G01eTestGUI(BaseGUI):
+        """Simple sandbox window to test scroll behaviour and styling."""
 
         def build_widgets(self) -> None:
-            # Heading
-            make_heading(
+            # Window heading
+            make_label(
                 self.main_frame,
-                "G01d BaseGUI Scroll Sandbox",
-                pady=(0, 10),
+                "G01e BaseGUI Scroll Sandbox",
+                category="WindowHeading",
+                surface="Primary",
+                weight="Bold",
             ).pack(anchor="w", pady=(0, 10))
 
-            # Add enough labels to require main-window scrolling
+            # Section heading
+            make_label(
+                self.main_frame,
+                "Main Content Area",
+                category="SectionHeading",
+                surface="Primary",
+                weight="Bold",
+            ).pack(anchor="w", pady=(0, 6))
+
+            # Fill with lines to force scrolling
             for i in range(15):
                 make_label(
                     self.main_frame,
-                    f"Main window content line {i + 1}",
+                    f"Main content line {i + 1}",
+                    category="Body",
+                    surface="Primary",
+                    weight="Normal",
                 ).pack(anchor="w", pady=2)
 
-            # Divider
             make_divider(self.main_frame).pack(fill="x", pady=10)
 
-            # Text console with its own scrollbar
             make_label(
                 self.main_frame,
-                "Scrollable console (captures mouse wheel when hovered):",
+                "Scrollable console (hover to capture scroll):",
+                category="Body",
+                surface="Primary",
+                weight="Bold",
             ).pack(anchor="w", pady=(0, 4))
 
+            # Text console
             console = make_textarea(self.main_frame, height=8)
             console.pack(fill="both", expand=True, pady=(0, 10))
 
             for i in range(40):
                 console.insert("end", f"Console log line {i + 1}\n")
 
-            # Register console as a scroll widget so it handles its own mouse wheel
+            # Console scroll override
             self.bind_scroll_widget(console)
 
-            # Footer label
             make_label(
                 self.main_frame,
-                "Try scrolling with the mouse/trackpad over the main area vs over the console.",
+                "Scroll over main area vs scroll over the console to test per-widget scroll override.",
+                category="Body",
+                surface="Primary",
+                weight="Normal",
             ).pack(anchor="w", pady=(10, 0))
 
-    logger.info("=== G01d_gui_base sandbox test start ===")
-    app = G01dTestGUI(title="G01d BaseGUI Sandbox (Option A – New Architecture)")
+    logger.info("[G01e] === BaseGUI sandbox start ===")
+    app = G01eTestGUI(title="G01e BaseGUI Sandbox")
     app.mainloop()
-    logger.info("=== G01d_gui_base sandbox test end ===")
+    logger.info("[G01e] === BaseGUI sandbox end ===")

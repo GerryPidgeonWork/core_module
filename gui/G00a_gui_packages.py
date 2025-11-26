@@ -54,6 +54,7 @@ import tkinter.font as tkFont
 from tkinter import scrolledtext
 
 
+
 # ====================================================================================================
 # 2. OPTIONAL ttkbootstrap SUPPORT (OPT-IN ONLY)
 # ----------------------------------------------------------------------------------------------------
@@ -91,8 +92,9 @@ def enable_ttkbootstrap():
         ThemedButton = tb.Button
         ThemedFrame = tb.Frame
 
-    except Exception:
+    except Exception as exc:
         # Silent fallback to standard ttk widgets
+        print("DEBUG: ttkbootstrap failed →", repr(exc))
         tb = None
         Window = None
         Style = None

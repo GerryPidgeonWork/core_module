@@ -92,7 +92,7 @@ logger = get_logger(__name__)
 # --- Additional project-level imports (append below this line only) ----------------------------------
 from gui.G00a_gui_packages import tk, ttk
 from gui.G01a_style_config import FRAME_PADDING
-from gui.G01c_widget_primitives import UIPrimitives
+from gui.G01c_widget_primitives import make_label, make_button
 from gui.G01e_gui_base import BaseGUI
 from gui.G03d_app_state import AppState
 
@@ -108,10 +108,10 @@ class NavigationController:
         • register_page(name, PageClass)
         • show_page(name)
         • destroy_page(name)
-        • Shared AppState + UIPrimitives instances
+        • Shared AppState instance
 
     Pages must subclass BasePage or ttk.Frame, and accept:
-        parent, controller, ui, app_state
+        parent, controller, app_state
     """
 
     def __init__(self, root_window: BaseGUI):
@@ -124,9 +124,8 @@ class NavigationController:
         self.root: BaseGUI = root_window
         self.container: ttk.Frame = root_window.main_frame
 
-        # Shared state & UI layer
+        # Shared state
         self.app_state: AppState = AppState()
-        self.ui: UIPrimitives = UIPrimitives(root_window)
 
         # Registry of page classes
         self.page_classes: Dict[str, Type[Any]] = {}
@@ -162,6 +161,8 @@ class NavigationController:
         if name not in self.page_classes:
             raise KeyError(f"Page '{name}' has not been registered.")
 
+        logger.debug("NavigationController: switching to page '%s'", name)
+
         # Hide current page if present
         if self.current_page is not None:
             current_frame = self.page_instances.get(self.current_page)
@@ -174,7 +175,6 @@ class NavigationController:
             instance = PageClass(
                 parent=self.container,
                 controller=self,
-                ui=self.ui,
                 app_state=self.app_state,
             )
             self.page_instances[name] = instance
@@ -217,7 +217,6 @@ class BasePage(ttk.Frame):
 
     Provides:
         • self.controller → NavigationController
-        • self.ui         → UIPrimitives (wrapping widget/layout primitives)
         • self.app_state  → shared typed state
         • Default padding + style on the root frame
         • Required override: build_page()
@@ -227,7 +226,6 @@ class BasePage(ttk.Frame):
         self,
         parent: tk.Widget,
         controller: NavigationController,
-        ui: UIPrimitives,
         app_state: AppState,
         **kwargs: Any,
     ):
@@ -237,13 +235,11 @@ class BasePage(ttk.Frame):
         Args:
             parent:     Parent container widget, usually NavigationController.container.
             controller: The NavigationController managing this page.
-            ui:         Shared UIPrimitives instance.
             app_state:  Shared AppState instance.
         """
-        super().__init__(parent, padding=FRAME_PADDING, style="TFrame", **kwargs)
+        super().__init__(parent, padding=FRAME_PADDING,  style="Primary.TFrame", **kwargs)
 
         self.controller: NavigationController = controller
-        self.ui: UIPrimitives = ui
         self.app_state: AppState = app_state
 
         self.build_page()
@@ -265,11 +261,15 @@ class HomePage(BasePage):
     """Simple demo home page to test NavigationController and BasePage."""
 
     def build_page(self) -> None:
-        ui = self.ui
+        make_label(
+            self,
+            "🏠 Home Page",
+            category="WindowHeading",
+            surface="Primary",
+            weight="Bold",
+        ).pack(anchor="w", pady=(0, 20))
 
-        ui.heading(self, "🏠 Home Page").pack(anchor="w", pady=(0, 20))
-
-        ttk.Button(
+        make_button(
             self,
             text="Go To Settings",
             command=lambda: self.controller.show_page("settings"),
@@ -280,11 +280,15 @@ class SettingsPage(BasePage):
     """Simple demo settings page to test NavigationController and BasePage."""
 
     def build_page(self) -> None:
-        ui = self.ui
+        make_label(
+            self,
+            "⚙ Settings Page",
+            category="WindowHeading",
+            surface="Primary",
+            weight="Bold",
+        ).pack(anchor="w", pady=(0, 20))
 
-        ui.heading(self, "⚙ Settings Page").pack(anchor="w", pady=(0, 20))
-
-        ttk.Button(
+        make_button(
             self,
             text="Back To Home",
             command=lambda: self.controller.show_page("home"),
@@ -296,12 +300,15 @@ class SettingsPage(BasePage):
 # ----------------------------------------------------------------------------------------------------
 def main() -> None:
     """
-    Standalone test window for G03d_app_controller.
+    Standalone test window for G03e_app_controller.
 
     Creates a BaseGUI window, attaches a NavigationController,
     registers demo pages, and shows the home page.
     """
-    app = BaseGUI(title="G03d NavigationController Sandbox")
+    init_logging()
+    logger.info("=== G03e_app_controller.py — Sandbox Start ===")
+
+    app = BaseGUI(title="G03e NavigationController Sandbox")
 
     nav = NavigationController(app)
     nav.register_page("home", HomePage)
@@ -309,7 +316,9 @@ def main() -> None:
 
     nav.show_page("home")
 
+    logger.info("=== G03e_app_controller.py — Entering mainloop ===")
     app.mainloop()
+    logger.info("=== G03e_app_controller.py — Sandbox End ===")
 
 
 if __name__ == "__main__":

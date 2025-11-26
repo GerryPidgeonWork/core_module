@@ -162,24 +162,35 @@ if __name__ == "__main__":
     """
     Simple test window to verify NavigationController + BasePage.
     """
-
-    logger.info("=== G03_navigation.py — Self Test Start ===")
+    init_logging()
+    logger.info("=== G03a_navigation.py — Self Test Start ===")
 
     from gui.G01e_gui_base import BaseGUI
-    from gui.G01c_widget_primitives import UIPrimitives
+    from gui.G01c_widget_primitives import make_label
 
     class TestPage(BasePage):
         def build_page(self):
-            ui = UIPrimitives(self)
-            ui.heading(self, "G03 Navigation Test Page").pack(pady=(10, 5))
-            ui.label(self, "If you see this page, navigation is working.").pack()
+            make_label(
+                self,
+                "G03a Navigation Test Page",
+                category="WindowHeading",
+                surface="Primary",
+                weight="Bold",
+            ).pack(pady=(10, 5))
+            make_label(
+                self,
+                "If you see this page, navigation is working.",
+                category="Body",
+                surface="Primary",
+                weight="Normal",
+            ).pack()
 
-    app = BaseGUI(title="G03 Navigation — Self Test")
+    app = BaseGUI(title="G03a Navigation — Self Test")
     nav = NavigationController(app)
 
     nav.register_page("test", TestPage)
     nav.show_page("test")
 
-    logger.info("=== G03_navigation.py — Entering mainloop ===")
+    logger.info("=== G03a_navigation.py — Entering mainloop ===")
     app.mainloop()
-    logger.info("=== G03_navigation.py — Self Test End ===")
+    logger.info("=== G03a_navigation.py — Self Test End ===")

@@ -17,10 +17,10 @@
 #   • Normalise geometry kwargs (padx/pady/ipadx/ipady) so layout utilities in G02a
 #     can reliably apply placement rules.
 #   • Apply theme defaults:
-#         - fonts resolved by G01b
+#         - fonts resolved by G01b_style_engine
 #         - colours from G01a_style_config
 #         - ttk styles from G01b_style_engine
-#   • Translate tk/ttk differences (e.g., fg/bg vs foreground/background).
+#   • Translate tk/ttk differences for the few classic Tk widgets used (e.g. ScrolledText).
 #   • Expose an object-oriented wrapper (UIPrimitives) for clean, readable page code.
 #
 # Integration:
@@ -40,21 +40,14 @@
 #
 #   - G01c_widget_primitives (THIS MODULE):
 #         Builds the actual widgets, applying:
-#             • style rules from G01b
-#             • colour/size/font tokens from G01a
+#             • style names from G01b
 #             • layout abstraction from G02a
 #
-# Rules:
-#   - No hard-coded colours/sizes except where ttk demands them.
-#   - No direct widget layout (grid/pack). Only construct widgets.
+# CRITICAL RULES:
+#   - No hard-coded colours/sizes for ttk widgets; all ttk appearance comes from styles.
+#   - No direct ttk font/fg/bg overrides except where ttk does not support styles (e.g. tk.Text).
 #   - No creation of windows or styles at import time — all configuration by callers.
 #   - Geometry hints are stored as `widget.geometry_kwargs` and consumed later by G02a.
-#
-# Notes:
-#   - All primitives follow the same pattern: extract geometry → normalise options →
-#     apply defaults → create widget.
-#   - UIPrimitives wraps every function for clean consumption by page classes.
-#   - attach_layout_helpers(UIPrimitives) integrates the G02a layout DSL transparently.
 #
 # ----------------------------------------------------------------------------------------------------
 # Author:       Gerry Pidgeon
@@ -111,141 +104,137 @@ logger = get_logger(__name__)
 
 # --- Additional project-level imports (append below this line only) ----------------------------------
 from gui.G00a_gui_packages import tk, ttk, tkFont, scrolledtext
-from gui.G01a_style_config import *
-from gui.G01b_style_engine import FONT_NAME_BASE, FONT_NAME_HEADING, FONT_NAME_SECTION_HEADING, configure_ttk_styles
+from gui.G01a_style_config import (
+    FRAME_SIZE_H,
+    FRAME_SIZE_V,
+    FRAME_PADDING,
+    GUI_COLOUR_BG_PRIMARY,
+    GUI_COLOUR_BG_TEXTAREA,
+    TEXT_COLOUR_SECONDARY,
+)
+from gui.G01b_style_engine import (
+    FONT_NAME_BASE,
+    configure_ttk_styles,
+)
 from gui.G02a_layout_utils import attach_layout_helpers
-FontSpec = Union[str, Tuple[str, int], Tuple[str, int, str]]
 
 
 # ====================================================================================================
-# 3. INTERNAL HELPER FUNCTIONS (FONT & GEOMETRY)
+# 3. INTERNAL HELPER FUNCTIONS (GEOMETRY & TK-ONLY FONT)
 # ----------------------------------------------------------------------------------------------------
-# These helpers are "internal" in intent but named without underscores to comply with
+# These helpers are internal in intent but named without underscores to comply with
 # Global Coding Standards (no functions starting with an underscore).
 # ====================================================================================================
-def resolve_font_family() -> str:
-    """
-    Choose a usable font family based on GUI_FONT_FAMILY from G00a_style_config.
-
-    The first family that can be instantiated by tkFont.Font(...) is returned.
-    If none of the preferred families are available, the function falls back to
-    'Segoe UI' as a safe cross-platform default.
-
-    Returns:
-        str: Name of the resolved font family.
-    """
-    families = GUI_FONT_FAMILY
-    logger.debug("[G01b] resolve_font_family: GUI_FONT_FAMILY=%r", families)
-
-    if isinstance(families, (tuple, list)):
-        for fam in families:
-            try:
-                tkFont.Font(family=fam, size=GUI_FONT_SIZE_DEFAULT)  # type: ignore[name-defined]
-                logger.info("[G01b] Resolved GUI font family: %s", fam)
-                return fam
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("[G01b] Font '%s' not available: %s", fam, exc)
-    else:
-        try:
-            tkFont.Font(family=families, size=GUI_FONT_SIZE_DEFAULT)  # type: ignore[name-defined]
-            logger.info("[G01b] Resolved GUI font family (single): %s", families)
-            return families
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[G01b] Font '%s' not available: %s", families, exc)
-
-    fallback = "Segoe UI"
-    logger.warning("[G01b] Falling back to default font family: %s", fallback)
-    return fallback
-
-
-def base_font() -> FontSpec:
-    """
-    Return the default body font spec for widgets.
-
-    Prefers the named font from G01a_style_engine (FONT_NAME_BASE), falling back to a
-    direct (family, size) tuple if named fonts are unavailable.
-
-    Returns:
-        FontSpec: Named font identifier or (family, size) tuple.
-    """
-    if FONT_NAME_BASE:
-        logger.debug("[G01b] base_font: using named font %s", FONT_NAME_BASE)
-        return FONT_NAME_BASE
-    fam = resolve_font_family()
-    logger.debug("[G01b] base_font: using tuple font (%s, %d)", fam, GUI_FONT_SIZE_DEFAULT)
-    return (fam, GUI_FONT_SIZE_DEFAULT)
-
-
-def heading_font() -> FontSpec:
-    """
-    Return the heading font spec for primary headings.
-
-    Prefers the named heading font from G01a_style_engine (FONT_NAME_HEADING) and falls
-    back to a (family, size, weight) tuple if necessary.
-
-    Returns:
-        FontSpec: Named font identifier or (family, size, weight) tuple.
-    """
-    if FONT_NAME_HEADING:
-        logger.debug("[G01b] heading_font: using named font %s", FONT_NAME_HEADING)
-        return FONT_NAME_HEADING
-    fam = resolve_font_family()
-    logger.debug(
-        "[G01b] heading_font: using tuple font (%s, %d, 'bold')",
-        fam,
-        GUI_FONT_SIZE_HEADING,
-    )
-    return (fam, GUI_FONT_SIZE_HEADING, "bold")
-
-
-def section_heading_font() -> FontSpec:
-    """
-    Return the font spec used for subheadings / section-like labels.
-
-    Prefers the named section heading font from G01a_style_engine and falls back to a
-    (family, size, weight) tuple if necessary.
-
-    Returns:
-        FontSpec: Named font identifier or (family, size, weight) tuple.
-    """
-    if FONT_NAME_SECTION_HEADING:
-        logger.debug(
-            "[G01b] section_heading_font: using named font %s",
-            FONT_NAME_SECTION_HEADING,
-        )
-        return FONT_NAME_SECTION_HEADING
-    fam = resolve_font_family()
-    logger.debug(
-        "[G01b] section_heading_font: using tuple font (%s, %d, 'bold')",
-        fam,
-        GUI_FONT_SIZE_TITLE,
-    )
-    return (fam, GUI_FONT_SIZE_TITLE, "bold")
-
 
 def extract_geometry_kwargs(options: MutableMapping[str, Any]) -> Dict[str, Any]:
     """
-    Pop geometry-related keyword arguments from a widget options dict.
+    Extract geometry-related keyword arguments from a widget options mapping.
 
-    Geometry keys are not passed to widget constructors; instead they are stored on the
-    created widget as `widget.geometry_kwargs` so layout code can apply them explicitly.
+    Geometry keys (padx, pady, ipadx, ipady) are NOT passed into widget constructors.
+    Instead, they are stored on the created widget as `widget.geometry_kwargs` so that
+    layout utilities (G02a_layout_utils) can apply them consistently.
 
     Args:
-        options: Mapping of options that will be passed to the widget constructor.
-                 This mapping is modified in-place (geometry keys are removed).
+        options (MutableMapping[str, Any]):
+            Mapping of options that will be passed to the widget constructor.
+            This mapping is modified in-place; geometry keys are removed.
 
     Returns:
-        dict: A dictionary containing only geometry-related keys (padx, pady, ipadx, ipady).
+        Dict[str, Any]:
+            A dictionary containing only geometry-related keys.
+            Example: {"padx": 4, "pady": 2}
+
+    Notes:
+        - Any unknown geometry-like keys are ignored safely.
+        - Values are normalised to int where possible for consistency.
     """
     geometry_keys = ("padx", "pady", "ipadx", "ipady")
     geometry: Dict[str, Any] = {}
 
     for key in geometry_keys:
         if key in options:
-            geometry[key] = options.pop(key)
+            val = options.pop(key)
 
-    logger.debug("[G01b] extract_geometry_kwargs: %r", geometry)
+            # Normalise numeric values safely
+            try:
+                val = int(val)
+            except Exception:
+                pass
+
+            geometry[key] = val
+
+    logger.debug("[G01c] extract_geometry_kwargs: %r", geometry)
     return geometry
+
+
+def get_tk_body_font() -> str | None:
+    """
+    Determine a Tk font to use for classic Tk widgets (e.g. ScrolledText).
+
+    Behaviour:
+        - Prefer the named base font from G01b_style_engine (FONT_NAME_BASE) if it
+          has been created via configure_ttk_styles(..).
+        - If the named font is not yet registered, fall back to 'TkDefaultFont'.
+        - Any errors during lookup fall back to None, allowing Tk to choose defaults.
+
+    Returns:
+        str | None:
+            Name of a Tk named font to apply to tk-based widgets, or None to allow
+            Tk to choose its own default font.
+    """
+    try:
+        if FONT_NAME_BASE:
+            try:
+                tkFont.nametofont(FONT_NAME_BASE)  # type: ignore[name-defined]
+                logger.debug("[G01c] get_tk_body_font: using named font %s", FONT_NAME_BASE)
+                return FONT_NAME_BASE
+            except Exception:
+                logger.debug(
+                    "[G01c] get_tk_body_font: named font %s not registered yet; "
+                    "falling back to TkDefaultFont.",
+                    FONT_NAME_BASE,
+                )
+
+        try:
+            tkFont.nametofont("TkDefaultFont")  # type: ignore[name-defined]
+            logger.debug("[G01c] get_tk_body_font: using 'TkDefaultFont'.")
+            return "TkDefaultFont"
+        except Exception:
+            logger.debug(
+                "[G01c] get_tk_body_font: 'TkDefaultFont' not available; letting Tk choose."
+            )
+
+    except Exception as exc:
+        logger.debug("[G01c] get_tk_body_font: error during font resolution: %s", exc)
+
+    return None
+
+
+def strip_colour_and_font_kwargs(options: MutableMapping[str, Any]) -> None:
+    """
+    Remove direct colour and font overrides from a ttk widget options mapping.
+
+    Purpose:
+        - Enforce that all ttk widgets derive appearance from ttk styles defined
+          in G01b_style_engine, rather than from per-widget overrides.
+        - Remove tk-style aliases (fg/bg) and ttk equivalents (foreground/background,
+          font) to keep visual configuration centralised.
+
+    Args:
+        options (MutableMapping[str, Any]):
+            Mapping of options passed to a widget constructor. Modified in-place.
+
+    Returns:
+        None.
+    """
+    for bad in ("fg", "bg", "foreground", "background", "font"):
+        if bad in options:
+            logger.debug(
+                "[G01c] strip_colour_and_font_kwargs: dropping option %s=%r",
+                bad,
+                options[bad],
+            )
+            options.pop(bad, None)
 
 
 # ====================================================================================================
@@ -253,115 +242,270 @@ def extract_geometry_kwargs(options: MutableMapping[str, Any]) -> Dict[str, Any]
 # ----------------------------------------------------------------------------------------------------
 # Core primitives for rendering text: labels, headings, subheadings, and status messages.
 # These are the foundation for most static and dynamic text in the GUI.
+#
+# IMPORTANT:
+#   - All ttk visual appearance (font, colours, padding) is provided by styles
+#     defined in G01b_style_engine.
+#   - These primitives only set the style name (with override support) and logical
+#     options such as `text=`.
+#
+# Label style matrix (from G01b):
+#   • Primary.Normal.TLabel          – BASE_FONT, primary background
+#   • Secondary.Normal.TLabel        – BASE_FONT, secondary background
+#   • Primary.Bold.TLabel            – BOLD_FONT, primary background
+#   • Secondary.Bold.TLabel          – BOLD_FONT, secondary background
+#
+# Heading system (5-tier):
+#   • WindowHeading.TLabel           – Top of window/page
+#   • Primary.Heading.TLabel         – Major heading (primary surface)
+#   • Secondary.Heading.TLabel       – Major heading (secondary/card surface)
+#   • Primary.SectionHeading.TLabel  – Section heading (primary surface)
+#   • Secondary.SectionHeading.TLabel– Section heading (secondary/card surface)
+#
+# make_label(...) is the generic builder; UIPrimitives will expose wrappers.
 # ====================================================================================================
 
-def make_label(parent: tk.Misc, text: str = "", **kwargs: Any) -> ttk.Label:  # type: ignore[name-defined]
-    """
-    Create a basic themed ttk Label.
 
-    Geometry-related kwargs (padx, pady, etc.) are removed and stored on the widget as
-    `geometry_kwargs` for external layout helpers to consume. Supports both `fg`/`bg`
-    and `foreground` / `background` aliases.
+# ----------------------------------------------------------------------------------------------------
+# Valid parameter values (for validation and documentation)
+# ----------------------------------------------------------------------------------------------------
+LABEL_CATEGORIES = ("Body", "Heading", "SectionHeading", "WindowHeading", "Card", "Success", "Warning", "Error")
+LABEL_SURFACES = ("Primary", "Secondary")
+LABEL_WEIGHTS = ("Normal", "Bold")
+
+
+def make_label(
+    parent: tk.Misc,
+    text: str = "",
+    *,
+    category: str = "Body",
+    surface: str = "Primary",
+    weight: str = "Normal",
+    style: str | None = None,
+    **kwargs: Any,
+) -> ttk.Label:  # type: ignore[name-defined]
+    """
+    Create a themed ttk Label with style derived from semantic parameters.
+
+    Description:
+        Unified factory for all label types. The ttk style name is constructed
+        dynamically from category, surface, and weight parameters, ensuring
+        consistency with the G01b style matrix.
 
     Args:
-        parent: Parent container widget.
-        text:   Label text.
-        **kwargs: Additional ttk.Label options (font, foreground, background, etc.).
+        parent (tk.Misc):
+            Parent container widget.
+        text (str):
+            Label text content.
+        category (str):
+            Semantic label type. One of: Body, Heading, SectionHeading,
+            WindowHeading, Card, Success, Warning, Error. Default: "Body".
+        surface (str):
+            Background surface context. One of: Primary, Secondary.
+            Default: "Primary".
+        weight (str):
+            Font weight. One of: Normal, Bold. Default: "Normal".
+        style (str | None):
+            Explicit style override. If provided, category/surface/weight
+            are ignored. Default: None.
+        **kwargs (Any):
+            Additional ttk.Label options (e.g., anchor, justify, wraplength).
 
     Returns:
-        ttk.Label: The created label instance with .geometry_kwargs metadata.
+        ttk.Label:
+            The created label widget with .geometry_kwargs metadata attached.
+
+    Raises:
+        None.
+
+    Notes:
+        - Geometry kwargs (padx, pady, ipadx, ipady) are extracted and stored
+          on widget.geometry_kwargs for layout utilities (G02a).
+        - Direct colour/font kwargs are stripped to enforce style-only appearance.
+        - Style name format:
+            Body:  "{surface}.{weight}.TLabel"
+            Other: "{surface}.{category}.{weight}.TLabel"
     """
     geometry = extract_geometry_kwargs(kwargs)
+    strip_colour_and_font_kwargs(kwargs)
 
-    # Map tk-style fg/bg aliases to ttk foreground/background
-    if "fg" in kwargs and "foreground" not in kwargs:
-        kwargs["foreground"] = kwargs.pop("fg")
-    if "bg" in kwargs and "background" not in kwargs:
-        kwargs["background"] = kwargs.pop("bg")
+    # Build style name from parameters (unless explicit style provided)
+    if style is not None:
+        style_name = style
+    elif category == "Body":
+        style_name = f"{surface}.{weight}.TLabel"
+    else:
+        style_name = f"{surface}.{category}.{weight}.TLabel"
+
+    # Allow style in kwargs to override (for backward compatibility)
+    style_name = kwargs.pop("style", style_name)
 
     options: Dict[str, Any] = {
         "text": text,
-        "font": kwargs.pop("font", base_font()),
-        "foreground": kwargs.pop("foreground", TEXT_COLOUR_SECONDARY),
-        "background": kwargs.pop("background", GUI_COLOUR_BG_PRIMARY),
+        "style": style_name,
     }
     options.update(kwargs)
 
-    logger.debug("[G01b] make_label: text=%r options=%r geometry=%r", text, options, geometry)
+    logger.debug(
+        "[G01c] make_label: text=%r category=%s surface=%s weight=%s style=%s geometry=%r",
+        text,
+        category,
+        surface,
+        weight,
+        style_name,
+        geometry,
+    )
+
     widget: ttk.Label = ttk.Label(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
 
+
+# ----------------------------------------------------------------------------------------------------
+# LEGACY WRAPPER FUNCTIONS (Backward Compatibility)
+# ----------------------------------------------------------------------------------------------------
+# These functions wrap make_label() with appropriate category/surface/weight parameters.
+# They are retained for backward compatibility but new code should use make_label() directly.
+# ----------------------------------------------------------------------------------------------------
 
 def make_heading(parent: tk.Misc, text: str, **kwargs: Any) -> ttk.Label:  # type: ignore[name-defined]
     """
-    Create a primary heading label.
+    Create a window-level heading.
 
-    Typically used for window titles or major section headings. Uses the heading font
-    from the theme and the primary text colour by default.
+    Description:
+        Legacy wrapper for make_label() with category="WindowHeading".
+        New code should use make_label() directly.
 
     Args:
-        parent: Parent container widget.
-        text:   Heading text.
-        **kwargs: Additional ttk.Label options.
+        parent (tk.Misc):
+            Parent container widget.
+        text (str):
+            Heading text.
+        **kwargs (Any):
+            Optional ttk.Label override parameters (anchor, justify, surface, weight).
 
     Returns:
-        ttk.Label: The created heading label instance with .geometry_kwargs metadata.
+        ttk.Label:
+            The created top-level heading label with .geometry_kwargs.
+
+    Raises:
+        None.
+
+    Notes:
+        Default style: "Primary.WindowHeading.Bold.TLabel"
     """
-    geometry = extract_geometry_kwargs(kwargs)
+    surface = kwargs.pop("surface", "Primary")
+    weight = kwargs.pop("weight", "Bold")
+    return make_label(parent, text, category="WindowHeading", surface=surface, weight=weight, **kwargs)
 
-    if "fg" in kwargs and "foreground" not in kwargs:
-        kwargs["foreground"] = kwargs.pop("fg")
-    if "bg" in kwargs and "background" not in kwargs:
-        kwargs["background"] = kwargs.pop("bg")
 
-    options: Dict[str, Any] = {
-        "text": text,
-        "font": kwargs.pop("font", heading_font()),
-        "foreground": kwargs.pop("foreground", TEXT_COLOUR_PRIMARY),
-        "background": kwargs.pop("background", GUI_COLOUR_BG_PRIMARY),
-    }
-    options.update(kwargs)
+def make_section_heading(
+    parent: tk.Misc,
+    text: str,
+    *,
+    style: str | None = None,
+    **kwargs: Any,
+) -> ttk.Label:  # type: ignore[name-defined]
+    """
+    Create a section-level heading.
 
-    logger.debug("[G01b] make_heading: text=%r options=%r geometry=%r", text, options, geometry)
-    widget: ttk.Label = ttk.Label(parent, **options)  # type: ignore[assignment]
-    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
-    return widget
+    Description:
+        Legacy wrapper for make_label() with category="SectionHeading".
+        New code should use make_label() directly.
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        text (str):
+            Section heading text.
+        style (str | None):
+            Optional explicit style override.
+        **kwargs (Any):
+            Additional ttk.Label options (surface, weight, anchor, etc.).
+
+    Returns:
+        ttk.Label:
+            Section heading widget with .geometry_kwargs metadata.
+
+    Raises:
+        None.
+
+    Notes:
+        Default style: "Primary.SectionHeading.Bold.TLabel"
+    """
+    if style is not None:
+        return make_label(parent, text, style=style, **kwargs)
+    surface = kwargs.pop("surface", "Primary")
+    weight = kwargs.pop("weight", "Bold")
+    return make_label(parent, text, category="SectionHeading", surface=surface, weight=weight, **kwargs)
 
 
 def make_subheading(parent: tk.Misc, text: str, **kwargs: Any) -> ttk.Label:  # type: ignore[name-defined]
     """
-    Create a subheading label inside a section or panel.
+    Create a subheading inside a section or panel.
 
-    Uses the section heading font and primary text colour for in-section emphasis.
+    Description:
+        Legacy wrapper for make_label() with category="SectionHeading".
+        Functionally identical to make_section_heading().
+        New code should use make_label() directly.
 
     Args:
-        parent: Parent container widget.
-        text:   Subheading text.
-        **kwargs: Additional ttk.Label options.
+        parent (tk.Misc):
+            Parent container.
+        text (str):
+            Subheading text.
+        **kwargs (Any):
+            Optional ttk.Label overrides (surface, weight, anchor, etc.).
 
     Returns:
-        ttk.Label: The created subheading label instance with .geometry_kwargs metadata.
+        ttk.Label:
+            Subheading label with .geometry_kwargs metadata.
+
+    Raises:
+        None.
+
+    Notes:
+        Default style: "Primary.SectionHeading.Bold.TLabel"
     """
-    geometry = extract_geometry_kwargs(kwargs)
+    surface = kwargs.pop("surface", "Primary")
+    weight = kwargs.pop("weight", "Bold")
+    return make_label(parent, text, category="SectionHeading", surface=surface, weight=weight, **kwargs)
 
-    if "fg" in kwargs and "foreground" not in kwargs:
-        kwargs["foreground"] = kwargs.pop("fg")
-    if "bg" in kwargs and "background" not in kwargs:
-        kwargs["background"] = kwargs.pop("bg")
 
-    options: Dict[str, Any] = {
-        "text": text,
-        "font": kwargs.pop("font", section_heading_font()),
-        "foreground": kwargs.pop("foreground", TEXT_COLOUR_PRIMARY),
-        "background": kwargs.pop("background", GUI_COLOUR_BG_PRIMARY),
-    }
-    options.update(kwargs)
+def make_card_label(
+    parent: tk.Misc,
+    text: str,
+    **kwargs: Any,
+) -> ttk.Label:  # type: ignore[name-defined]
+    """
+    Create a label designed for use inside Card.TFrame containers.
 
-    logger.debug("[G01b] make_subheading: text=%r options=%r geometry=%r", text, options, geometry)
-    widget: ttk.Label = ttk.Label(parent, **options)  # type: ignore[assignment]
-    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
-    return widget
+    Description:
+        Legacy wrapper for make_label() with category="Card".
+        New code should use make_label() directly.
+
+    Args:
+        parent (tk.Misc):
+            Card container widget.
+        text (str):
+            Label text.
+        **kwargs (Any):
+            Optional ttk.Label overrides (surface, weight, anchor, etc.).
+
+    Returns:
+        ttk.Label:
+            Card-surface label with .geometry_kwargs metadata.
+
+    Raises:
+        None.
+
+    Notes:
+        Default style: "Secondary.Card.Normal.TLabel"
+        Cards typically use Secondary surface as they have a distinct background.
+    """
+    surface = kwargs.pop("surface", "Secondary")
+    weight = kwargs.pop("weight", "Normal")
+    return make_label(parent, text, category="Card", surface=surface, weight=weight, **kwargs)
 
 
 def make_status_label(
@@ -373,85 +517,112 @@ def make_status_label(
     """
     Create a label for dynamic status/feedback messages.
 
-    The text colour is derived from the `status` argument (info, success, warning, error)
-    but can be overridden via `foreground` or `fg`.
+    Description:
+        Legacy wrapper for make_label() with category derived from status parameter.
+        New code should use make_label() directly with appropriate category.
 
     Args:
-        parent: Parent container widget.
-        text:   Status text to display.
-        status: One of "info", "success", "warning", or "error".
-        **kwargs: Additional ttk.Label options.
+        parent (tk.Misc):
+            Parent container widget.
+        text (str):
+            Status text to display.
+        status (str):
+            One of: "info", "success", "warning", "error".
+        **kwargs (Any):
+            Optional ttk.Label overrides (surface, weight, anchor, etc.).
 
     Returns:
-        ttk.Label: The created status label instance with .geometry_kwargs metadata.
+        ttk.Label:
+            Status label with .geometry_kwargs metadata.
+
+    Raises:
+        None.
+
+    Notes:
+        Status to category mapping:
+            - info    → Body (uses "Primary.Normal.TLabel")
+            - success → Success (uses "Primary.Success.Normal.TLabel")
+            - warning → Warning (uses "Primary.Warning.Normal.TLabel")
+            - error   → Error (uses "Primary.Error.Normal.TLabel")
     """
-    geometry = extract_geometry_kwargs(kwargs)
+    surface = kwargs.pop("surface", "Primary")
+    weight = kwargs.pop("weight", "Normal")
 
-    if status == "success":
-        fg_default = GUI_COLOUR_SUCCESS
-    elif status == "warning":
-        fg_default = GUI_COLOUR_WARNING
-    elif status == "error":
-        fg_default = GUI_COLOUR_ERROR
-    else:
-        fg_default = TEXT_COLOUR_SECONDARY
-
-    if "fg" in kwargs and "foreground" not in kwargs:
-        kwargs["foreground"] = kwargs.pop("fg")
-    if "bg" in kwargs and "background" not in kwargs:
-        kwargs["background"] = kwargs.pop("bg")
-
-    options: Dict[str, Any] = {
-        "text": text,
-        "font": kwargs.pop("font", base_font()),
-        "foreground": kwargs.pop("foreground", fg_default),
-        "background": kwargs.pop("background", GUI_COLOUR_BG_PRIMARY),
+    # Map status to category
+    status_to_category = {
+        "info": "Body",
+        "success": "Success",
+        "warning": "Warning",
+        "error": "Error",
     }
-    options.update(kwargs)
+    category = status_to_category.get(status, "Body")
 
-    logger.debug(
-        "[G01b] make_status_label: text=%r status=%s options=%r geometry=%r",
-        text,
-        status,
-        options,
-        geometry,
-    )
-    widget: ttk.Label = ttk.Label(parent, **options)  # type: ignore[assignment]
-    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
-    return widget
+    return make_label(parent, text, category=category, surface=surface, weight=weight, **kwargs)
 
 
 # ====================================================================================================
 # 5. INPUT WIDGET PRIMITIVES
 # ----------------------------------------------------------------------------------------------------
-# Widgets that accept user input: single-line entries, multi-line text areas, and comboboxes.
+# Widgets that accept user input: buttons, single-line entries, multi-line text areas,
+# and comboboxes.
+#
+# IMPORTANT:
+#   • ttk widgets (Button, Entry, Combobox) derive ALL visual appearance from the
+#     ttk style engine (G01b_style_engine). No ttk widget may receive direct bg/fg/font.
+#   • Text areas use classic Tk widgets (ScrolledText) and therefore may apply
+#     colour/font tokens directly from G01a_style_config.
+#   • Geometry kwargs (padx/pady/ipadx/ipady) are removed and stored as
+#       widget.geometry_kwargs
+#     so layout rules (G02a) can apply them consistently.
 # ====================================================================================================
 
 def make_button(parent: tk.Misc, text: str = "", **kwargs: Any) -> ttk.Button:  # type: ignore[name-defined]
     """
     Create a themed push button.
 
-    Relies on ttk/ttkbootstrap theming for colours and applies the global base font
-    by default. Geometry kwargs (padx, pady, etc.) are stored in .geometry_kwargs.
+    Default style:
+        - "Primary.TButton"
+
+    Other available semantic styles (from G01b_style_engine):
+        - "Secondary.TButton"
+        - "Success.TButton"
+        - "Warning.TButton"
+        - "Danger.TButton"
+
+    Geometry kwargs are stored in .geometry_kwargs.
+    Direct colour/font overrides (bg/fg/foreground/background/font) are removed.
 
     Args:
-        parent: Parent container widget.
-        text:   Button label text.
-        **kwargs: Additional ttk.Button options (command, bootstyle, etc.).
+        parent (tk.Misc):
+            Parent container widget.
+        text (str):
+            Button label text.
+        **kwargs (Any):
+            Additional ttk.Button options (e.g. command=..., style=...).
 
     Returns:
-        ttk.Button: The created button instance with .geometry_kwargs metadata.
+        ttk.Button:
+            The created button with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
+    callback = kwargs.pop("command", None)
+    style_name = kwargs.pop("style", "Primary.TButton")
+    strip_colour_and_font_kwargs(kwargs)
+
     options: Dict[str, Any] = {
         "text": text,
-        "command": kwargs.pop("command", None),
-        # "font": kwargs.pop("font", base_font()),  # Removed: ttk.Button does not support font
+        "style": style_name,
     }
+    if callback is not None:
+        options["command"] = callback
+
     options.update(kwargs)
 
-    logger.debug("[G01b] make_button: text=%r options=%r geometry=%r", text, options, geometry)
+    logger.debug(
+        "[G01c] make_button: text=%r style=%s options=%r geometry=%r",
+        text, style_name, options, geometry,
+    )
     widget: ttk.Button = ttk.Button(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
@@ -459,32 +630,35 @@ def make_button(parent: tk.Misc, text: str = "", **kwargs: Any) -> ttk.Button:  
 
 def make_entry(parent: tk.Misc, **kwargs: Any) -> ttk.Entry:  # type: ignore[name-defined]
     """
-    Create a single-line text entry widget.
+    Create a themed single-line text entry.
 
-    ttk.Entry does not accept direct bg/fg arguments; these are controlled by the
-    active ttk style, so any such keys are removed.
+    Default style:
+        - "TEntry"
+
+    Direct colours/fonts are stripped to enforce style-driven appearance.
 
     Args:
-        parent: Parent container widget.
-        **kwargs: Additional ttk.Entry options (width, textvariable, etc.).
+        parent (tk.Misc):
+            Parent container widget.
+        **kwargs (Any):
+            Additional ttk.Entry options.
 
     Returns:
-        ttk.Entry: The created entry instance with .geometry_kwargs metadata.
+        ttk.Entry:
+            Entry widget with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
-    # ttk.Entry does not accept direct bg/fg; these are controlled by style.
-    for bad in ("bg", "background", "fg", "foreground"):
-        if bad in kwargs:
-            logger.debug("[G01b] make_entry: dropping unsupported option %s", bad)
-        kwargs.pop(bad, None)
+    style_name = kwargs.pop("style", "TEntry")
+    strip_colour_and_font_kwargs(kwargs)
 
-    options: Dict[str, Any] = {
-        "font": kwargs.pop("font", base_font()),
-    }
+    options: Dict[str, Any] = {"style": style_name}
     options.update(kwargs)
 
-    logger.debug("[G01b] make_entry: options=%r geometry=%r", options, geometry)
+    logger.debug(
+        "[G01c] make_entry: style=%s options=%r geometry=%r",
+        style_name, options, geometry,
+    )
     widget: ttk.Entry = ttk.Entry(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
@@ -494,37 +668,44 @@ def make_textarea(parent: tk.Misc, **kwargs: Any) -> "scrolledtext.ScrolledText"
     """
     Create a scrolled multi-line text area.
 
-    Uses tk.scrolledtext.ScrolledText directly (not ttk), and maps ttk-style
-    `foreground`/`background` onto classic tk `fg`/`bg` if provided.
+    This uses the classic Tk ScrolledText widget (NOT ttk), so it cannot consume ttk
+    styles. Instead it uses semantic tokens from G01a_style_config:
+        - GUI_COLOUR_BG_TEXTAREA
+        - TEXT_COLOUR_SECONDARY
+        - FONT_NAME_BASE (if registered)
 
     Args:
-        parent: Parent container widget.
-        **kwargs: Additional ScrolledText options (height, width, wrap, etc.).
+        parent (tk.Misc):
+            Parent container widget.
+        **kwargs (Any):
+            ScrolledText options (height, width, wrap, etc.).
 
     Returns:
-        ScrolledText: The created text area instance with .geometry_kwargs metadata.
+        scrolledtext.ScrolledText:
+            Textarea widget with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
-    # Defaults tuned for body text.
-    default_font = kwargs.pop("font", base_font())
+    default_font = get_tk_body_font()
     default_wrap = kwargs.pop("wrap", "word")
 
-    # Map ttk-style foreground/background to classic tk fg/bg if used.
+    # Convert ttk-style fg/bg to Tk equivalents
     if "foreground" in kwargs and "fg" not in kwargs:
         kwargs["fg"] = kwargs.pop("foreground")
     if "background" in kwargs and "bg" not in kwargs:
         kwargs["bg"] = kwargs.pop("background")
 
     options: Dict[str, Any] = {
-        "font": default_font,
         "wrap": default_wrap,
         "fg": kwargs.pop("fg", TEXT_COLOUR_SECONDARY),
         "bg": kwargs.pop("bg", GUI_COLOUR_BG_TEXTAREA),
     }
+    if default_font is not None:
+        options["font"] = default_font
+
     options.update(kwargs)
 
-    logger.debug("[G01b] make_textarea: options=%r geometry=%r", options, geometry)
+    logger.debug("[G01c] make_textarea: options=%r geometry=%r", options, geometry)
     widget = scrolledtext.ScrolledText(parent, **options)  # type: ignore[name-defined]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
@@ -536,27 +717,38 @@ def make_combobox(
     **kwargs: Any,
 ) -> ttk.Combobox:  # type: ignore[name-defined]
     """
-    Create a themed Combobox (dropdown) widget.
+    Create a themed Combobox.
+
+    Default style:
+        - "TCombobox"
 
     Args:
-        parent: Parent container widget.
-        values: Optional list of values for the combobox.
-        **kwargs: Additional ttk.Combobox options (state, width, textvariable, etc.).
+        parent (tk.Misc):
+            Parent container.
+        values (Optional[list[Any]]):
+            List of dropdown values.
+        **kwargs (Any):
+            Additional ttk.Combobox options.
 
     Returns:
-        ttk.Combobox: The created combobox instance with .geometry_kwargs metadata.
+        ttk.Combobox:
+            Combobox with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
     if values is not None and "values" not in kwargs:
         kwargs["values"] = values
 
-    options: Dict[str, Any] = {
-        "font": kwargs.pop("font", base_font()),
-    }
+    style_name = kwargs.pop("style", "TCombobox")
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {"style": style_name}
     options.update(kwargs)
 
-    logger.debug("[G01b] make_combobox: options=%r geometry=%r", options, geometry)
+    logger.debug(
+        "[G01c] make_combobox: style=%s options=%r geometry=%r",
+        style_name, options, geometry,
+    )
     widget: ttk.Combobox = ttk.Combobox(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
@@ -566,8 +758,25 @@ def make_combobox(
 # 6. CHOICE CONTROL PRIMITIVES
 # ----------------------------------------------------------------------------------------------------
 # Boolean and single-choice controls: checkboxes, radio buttons, and switches.
-# Overloads are used to allow `command` to be callable or None while keeping type hints strict.
-# ====================================================================================================
+#
+# IMPORTANT:
+#   • These widgets derive ALL visual appearance from ttk styles defined in
+#       G01b_style_engine (e.g. TCheckbutton, TRadiobutton).
+#   • Direct colour/font overrides (bg/fg/foreground/background/font) are removed
+#     to enforce style-driven appearance.
+#   • Geometry kwargs (padx/pady/ipadx/ipady) are extracted and stored on the widget
+#     as widget.geometry_kwargs for layout utilities (G02a).
+#
+# Styles supported (from G01b):
+#   - "TCheckbutton"
+#   - "TRadiobutton"
+#   - Any future semantic variants (e.g., "Primary.TCheckbutton") via style override.
+# ----------------------------------------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------------------------------------
+# CHECKBOX
+# ----------------------------------------------------------------------------------------------------
 
 @overload
 def make_checkbox(
@@ -602,48 +811,55 @@ def make_checkbox(
     **kwargs: Any,
 ) -> ttk.Checkbutton:  # type: ignore[name-defined]
     """
-    Create a themed Checkbutton for boolean state toggles.
+    Create a themed Checkbutton used for boolean toggles.
 
-    Applies a default ttkbootstrap bootstyle "primary" when no style/bootstyle
-    is provided.
+    Default style:
+        - "TCheckbutton"
 
     Args:
-        parent:   Parent container widget.
-        text:     Label text next to the checkbox.
-        variable: Tkinter variable instance (BooleanVar / IntVar, etc.).
-        command:  Optional callback invoked when the value changes.
-        **kwargs: Additional Checkbutton options.
+        parent (tk.Misc):
+            Parent widget.
+        text (str):
+            Label text.
+        variable (tk.Variable):
+            Linked Tk variable (BooleanVar / IntVar).
+        command (Optional[Callable]):
+            Optional callback when toggled.
+        **kwargs:
+            Additional ttk.Checkbutton options.
 
     Returns:
-        ttk.Checkbutton: The created checkbutton with .geometry_kwargs metadata.
+        ttk.Checkbutton:
+            Created checkbox with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
+
+    style_name = kwargs.pop("style", "TCheckbutton")
+    strip_colour_and_font_kwargs(kwargs)
 
     options: Dict[str, Any] = {
         "text": text,
         "variable": variable,
+        "style": style_name,
     }
-
     if command is not None:
         options["command"] = command
-
-    # Note: bootstyle can be added via **kwargs if ttkbootstrap is available
-    
-    # Remove font if present (not supported by ttk.Checkbutton)
-    kwargs.pop("font", None)
 
     options.update(kwargs)
 
     logger.debug(
-        "[G01b] make_checkbox: text=%r options=%r geometry=%r",
-        text,
-        options,
-        geometry,
+        "[G01c] make_checkbox: text=%r style=%s options=%r geometry=%r",
+        text, style_name, options, geometry,
     )
     widget: ttk.Checkbutton = ttk.Checkbutton(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
 
+
+
+# ----------------------------------------------------------------------------------------------------
+# RADIO BUTTON
+# ----------------------------------------------------------------------------------------------------
 
 @overload
 def make_radio(
@@ -683,49 +899,56 @@ def make_radio(
     """
     Create a themed Radiobutton for mutually exclusive choices.
 
-    Multiple radios bound to the same Tk variable form a logical group where exactly
-    one value is selected at a time.
+    Default style:
+        - "TRadiobutton"
 
     Args:
-        parent:   Parent container widget.
-        text:     Label text next to the radio button.
-        variable: Shared Tk variable instance.
-        value:    Value assigned when this radio is selected.
-        command:  Optional callback invoked when selection changes.
-        **kwargs: Additional Radiobutton options.
+        parent (tk.Misc):
+            Parent container widget.
+        text (str):
+            Label text.
+        variable (tk.Variable):
+            Shared Tk variable for the radio group.
+        value (Any):
+            The value this radio button represents.
+        command (Optional[Callable]):
+            Callback when selection changes.
+        **kwargs:
+            Additional ttk.Radiobutton options.
 
     Returns:
-        ttk.Radiobutton: The created radio button with .geometry_kwargs metadata.
+        ttk.Radiobutton:
+            Created radio button with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
+
+    style_name = kwargs.pop("style", "TRadiobutton")
+    strip_colour_and_font_kwargs(kwargs)
 
     options: Dict[str, Any] = {
         "text": text,
         "variable": variable,
         "value": value,
+        "style": style_name,
     }
-
     if command is not None:
         options["command"] = command
-
-    # Note: bootstyle can be added via **kwargs if ttkbootstrap is available
-
-    # Remove font if present (not supported by ttk.Radiobutton)
-    kwargs.pop("font", None)
 
     options.update(kwargs)
 
     logger.debug(
-        "[G01b] make_radio: text=%r value=%r options=%r geometry=%r",
-        text,
-        value,
-        options,
-        geometry,
+        "[G01c] make_radio: text=%r value=%r style=%s options=%r geometry=%r",
+        text, value, style_name, options, geometry,
     )
     widget: ttk.Radiobutton = ttk.Radiobutton(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
 
+
+
+# ----------------------------------------------------------------------------------------------------
+# SWITCH (CHECKBUTTON VARIANT)
+# ----------------------------------------------------------------------------------------------------
 
 @overload
 def make_switch(
@@ -760,43 +983,47 @@ def make_switch(
     **kwargs: Any,
 ) -> ttk.Checkbutton:  # type: ignore[name-defined]
     """
-    Create a switch-style boolean toggle control.
+    Create a switch-style toggle control.
 
-    Uses ttkbootstrap "round-toggle" bootstyle where available but degrades
-    gracefully to a standard Checkbutton when running under plain ttk.
+    Default behaviour:
+        - Uses "TCheckbutton" style unless overridden.
+        - Works identically to a checkbox unless a specialised style is assigned
+          (e.g., a Switch.TCheckbutton from ttkbootstrap or custom G01b styles).
 
     Args:
-        parent:   Parent container widget.
-        text:     Label text next to the switch.
-        variable: Tk variable instance (BooleanVar / IntVar, etc.).
-        command:  Optional callback invoked when the value changes.
-        **kwargs: Additional Checkbutton options.
+        parent (tk.Misc):
+            Parent widget.
+        text (str):
+            Switch label.
+        variable (tk.Variable):
+            BooleanVar / IntVar linked to toggle state.
+        command (Optional[Callable]):
+            Callback when toggled.
+        **kwargs:
+            Additional ttk.Checkbutton options.
 
     Returns:
-        ttk.Checkbutton: The created switch control with .geometry_kwargs metadata.
+        ttk.Checkbutton:
+            Switch widget with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
+
+    style_name = kwargs.pop("style", "TCheckbutton")
+    strip_colour_and_font_kwargs(kwargs)
 
     options: Dict[str, Any] = {
         "text": text,
         "variable": variable,
+        "style": style_name,
     }
-
     if command is not None:
         options["command"] = command
-
-    # Note: bootstyle can be added via **kwargs if ttkbootstrap is available
-
-    # Remove font if present (not supported by ttk.Checkbutton)
-    kwargs.pop("font", None)
 
     options.update(kwargs)
 
     logger.debug(
-        "[G01b] make_switch: text=%r options=%r geometry=%r",
-        text,
-        options,
-        geometry,
+        "[G01c] make_switch: text=%r style=%s options=%r geometry=%r",
+        text, style_name, options, geometry,
     )
     widget: ttk.Checkbutton = ttk.Checkbutton(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
@@ -804,31 +1031,59 @@ def make_switch(
 
 
 # ====================================================================================================
-# 7. STRUCTURAL WIDGET PRIMITIVES
+# 7A. STRUCTURAL WIDGET PRIMITIVES
 # ----------------------------------------------------------------------------------------------------
-# Low-level containers that support layout and visual separation: frames, dividers, and spacers.
-# ====================================================================================================
+# Low-level containers that support layout and visual separation:
+#   • Frames      → generic structural containers (Primary, Secondary, Card, etc.)
+#   • Dividers    → 1px separators between content blocks
+#   • Spacers     → fixed vertical breathing room
+#
+# IMPORTANT:
+#   • ttk Frames derive ALL appearance from ttk styles defined in G01b_style_engine.
+#   • No direct fg/bg/font overrides are allowed — always style-driven.
+#   • Geometry kwargs (padx/pady/ipadx/ipady) are extracted and stored as
+#       widget.geometry_kwargs for G02 layout utilities.
+# ----------------------------------------------------------------------------------------------------
+
 
 def make_frame(parent: tk.Misc, **kwargs: Any) -> ttk.Frame:  # type: ignore[name-defined]
     """
-    Create a generic frame container.
+    Create a themed structural frame container.
 
-    Visual appearance is primarily driven by the active ttk style. Geometry
-    kwargs are stored in .geometry_kwargs for layout helpers.
+    Default style:
+        - "TFrame" (generic themed container)
+
+    Used for:
+        • Form sections
+        • Layout blocks
+        • Containers for labels, entries, controls
 
     Args:
-        parent: Parent container widget.
-        **kwargs: Additional Frame options.
+        parent (tk.Misc):
+            Parent container widget.
+        **kwargs:
+            Additional Frame options (style override, padding, etc.).
 
     Returns:
-        ttk.Frame: The created frame with .geometry_kwargs metadata.
+        ttk.Frame:
+            The created frame with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
-    logger.debug("[G01b] make_frame: options=%r geometry=%r", kwargs, geometry)
-    widget: ttk.Frame = ttk.Frame(parent, **kwargs)  # type: ignore[assignment]
+    style_name = kwargs.pop("style", "TFrame")
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {"style": style_name}
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_frame: style=%s options=%r geometry=%r",
+        style_name, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
+
 
 
 def make_divider(
@@ -839,41 +1094,50 @@ def make_divider(
     **kwargs: Any,
 ) -> ttk.Frame:  # type: ignore[name-defined]
     """
-    Create a visual divider line.
+    Create a 1px visual divider line between content groups.
 
-    Implemented as a Frame that defaults to the ToolbarDivider.TFrame style
-    defined in G01a_style_engine.
+    Default style:
+        - "ToolbarDivider.TFrame"
+          (configured in G01b_style_engine to use GUI_COLOUR_DIVIDER)
+
+    Notes:
+        • Implemented as a ttk.Frame so the background colour is style-driven.
+        • Height defaults to 1px (modern thin divider).
+        • Caller may override style (e.g., "Card.Divider.TFrame").
 
     Args:
-        parent: Parent container widget.
-        height: Divider height in pixels.
-        style:  Optional ttk style name to override the default divider style.
-        **kwargs: Additional Frame options (excluding bg/fg).
+        parent (tk.Misc):
+            Parent widget.
+        height (int):
+            Divider thickness in pixels.
+        style (Optional[str]):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options (no direct fg/bg overrides allowed).
 
     Returns:
-        ttk.Frame: The created divider frame with .geometry_kwargs metadata.
+        ttk.Frame:
+            Divider frame with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
-    # Determine effective style; fall back to the global toolbar divider style.
-    effective_style = style or "ToolbarDivider.TFrame"
+    style_name = style or "ToolbarDivider.TFrame"
+    strip_colour_and_font_kwargs(kwargs)
 
-    # Remove any direct colour arguments that ttk/ttkbootstrap.Frame does not support.
-    for bad in ("background", "bg", "foreground", "fg"):
-        if bad in kwargs:
-            logger.debug("[G01b] make_divider: dropping unsupported option %s", bad)
-        kwargs.pop(bad, None)
-
-    base: Dict[str, Any] = {
+    options: Dict[str, Any] = {
         "height": height,
-        "style": effective_style,
+        "style": style_name,
     }
-    base.update(kwargs)
+    options.update(kwargs)
 
-    logger.debug("[G01b] make_divider: options=%r geometry=%r", base, geometry)
-    widget: ttk.Frame = ttk.Frame(parent, **base)  # type: ignore[assignment]
+    logger.debug(
+        "[G01c] make_divider: style=%s options=%r geometry=%r",
+        style_name, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
+
 
 
 def make_spacer(
@@ -882,93 +1146,277 @@ def make_spacer(
     **kwargs: Any,
 ) -> ttk.Frame:  # type: ignore[name-defined]
     """
-    Create an empty spacer frame with a configurable height.
+    Create a vertical spacer used to introduce breathing room.
 
-    Spacers are used to introduce vertical breathing room between widgets and
-    avoid magic numbers embedded directly in geometry manager calls.
+    Default style:
+        - "TFrame" (so background matches container)
+
+    Notes:
+        • Spacers avoid embedding magic numbers inside pack/grid calls.
+        • Height controls visual rhythm in stacked layouts.
 
     Args:
-        parent: Parent container widget.
-        height: Spacer height in pixels.
-        **kwargs: Additional Frame options.
+        parent (tk.Misc):
+            Parent container.
+        height (int):
+            Spacer height in pixels (default=8).
+        **kwargs:
+            Optional Frame options (style override, etc.).
 
     Returns:
-        ttk.Frame: The created spacer frame with .geometry_kwargs metadata.
+        ttk.Frame:
+            Spacer frame with .geometry_kwargs metadata.
     """
     geometry = extract_geometry_kwargs(kwargs)
 
-    base: Dict[str, Any] = {
-        "height": height,
-    }
-    base.update(kwargs)
+    style_name = kwargs.pop("style", "TFrame")
+    strip_colour_and_font_kwargs(kwargs)
 
-    logger.debug("[G01b] make_spacer: options=%r geometry=%r", base, geometry)
-    widget: ttk.Frame = ttk.Frame(parent, **base)  # type: ignore[assignment]
+    options: Dict[str, Any] = {
+        "height": height,
+        "style": style_name,
+    }
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_spacer: style=%s height=%s options=%r geometry=%r",
+        style_name, height, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
+
 
 # ====================================================================================================
 # 7B. PUBLIC UI WRAPPER CLASS (REQUIRED BY G03 FRAMEWORK)
 # ----------------------------------------------------------------------------------------------------
-# This provides an object-oriented interface over the functional primitives.
-# The NavigationController will pass an instance of this class to each page.
+# Provides an object-oriented interface over the primitive widget functions.
+#
+# Pages receive `ui = UIPrimitives(self)` from the G03 Controller and call:
+#
+#       ui.heading_primary(frame, "Section Title")
+#       ui.label_primary(frame, "Body text")
+#       ui.button(frame, "Run", command=...)
+#
+# This keeps page code clean, declarative, and style-driven.
 # ====================================================================================================
 
 class UIPrimitives:
     """
     Thin OO wrapper around the primitive widget functions.
-    Pages use ui.heading(), ui.label(), ui.button() instead of calling
-    make_heading() etc. directly.
+
+    This class does NOT create widgets by itself. It exposes simple, predictable
+    helper methods that call the Section 4–7 primitive builders.
     """
 
-    def __init__(self, root):
+    def __init__(self, root: tk.Misc) -> None:  # type: ignore[name-defined]
+        """
+        Initialise a UIPrimitives interface.
+
+        Args:
+            root (tk.Misc):
+                Root or top-level widget. Stored for potential future use.
+        """
         self.root = root
 
-    # --- text primitives -------------------------------------------------------------------------
-    def label(self, parent, text="", **kwargs):
-        return make_label(parent, text=text, **kwargs)
+    # ================================================================================================
+    # TEXT LABELS — PRIMARY SURFACE
+    # ================================================================================================
+    def label_primary(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Body", surface="Primary", weight="Normal", **kwargs)
 
-    def heading(self, parent, text="", **kwargs):
-        return make_heading(parent, text, **kwargs)
+    def label_primary_bold(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Body", surface="Primary", weight="Bold", **kwargs)
 
-    def subheading(self, parent, text="", **kwargs):
-        return make_subheading(parent, text, **kwargs)
+    # ================================================================================================
+    # TEXT LABELS — SECONDARY SURFACE
+    # ================================================================================================
+    def label_secondary(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Body", surface="Secondary", weight="Normal", **kwargs)
 
-    def status(self, parent, text="", status="info", **kwargs):
-        return make_status_label(parent, text=text, status=status, **kwargs)
+    def label_secondary_bold(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Body", surface="Secondary", weight="Bold", **kwargs)
 
-    # --- input primitives ------------------------------------------------------------------------
-    def button(self, parent, text="", **kwargs):
+    # ================================================================================================
+    # CARD LABELS (inside Card.TFrame)
+    # ================================================================================================
+    def label_card(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        **kwargs: Any
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Card", surface="Secondary", weight="Normal", **kwargs)
+
+    def label_card_bold(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        **kwargs: Any
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Card", surface="Secondary", weight="Bold", **kwargs)
+
+    # ================================================================================================
+    # HEADINGS — COMPLETE 5-TIER HEADING SYSTEM
+    # ================================================================================================
+
+    # Window-level (top of page)
+    def heading_window(
+        self,
+        parent: tk.Misc,
+        text: str,
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="WindowHeading", surface="Primary", weight="Bold", **kwargs)
+
+    # Page-level headings (Primary/Secondary)
+    def heading_primary(
+        self,
+        parent: tk.Misc,
+        text: str,
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Heading", surface="Primary", weight="Bold", **kwargs)
+
+    def heading_secondary(
+        self,
+        parent: tk.Misc,
+        text: str,
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="Heading", surface="Secondary", weight="Bold", **kwargs)
+
+    # Section-level headings (Primary/Secondary)
+    def section_heading_primary(
+        self,
+        parent: tk.Misc,
+        text: str,
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="SectionHeading", surface="Primary", weight="Bold", **kwargs)
+
+    def section_heading_secondary(
+        self,
+        parent: tk.Misc,
+        text: str,
+        **kwargs: Any,
+    ) -> ttk.Label:
+        return make_label(parent, text, category="SectionHeading", surface="Secondary", weight="Bold", **kwargs)
+
+
+    # ================================================================================================
+    # STATUS LABELS
+    # ================================================================================================
+    def status(
+        self,
+        parent: tk.Misc,
+        text: str = "",
+        status: str = "info",
+        surface: str = "Primary",
+        **kwargs: Any,
+    ) -> ttk.Label:
+        """Create a status label with category derived from status parameter."""
+        status_to_category = {"info": "Body", "success": "Success", "warning": "Warning", "error": "Error"}
+        category = status_to_category.get(status, "Body")
+        return make_label(parent, text, category=category, surface=surface, weight="Normal", **kwargs)
+
+    def success(self, parent: tk.Misc, text: str = "", surface: str = "Primary", **kwargs: Any) -> ttk.Label:
+        return make_label(parent, text, category="Success", surface=surface, weight="Normal", **kwargs)
+
+    def warning(self, parent: tk.Misc, text: str = "", surface: str = "Primary", **kwargs: Any) -> ttk.Label:
+        return make_label(parent, text, category="Warning", surface=surface, weight="Normal", **kwargs)
+
+    def error(self, parent: tk.Misc, text: str = "", surface: str = "Primary", **kwargs: Any) -> ttk.Label:
+        return make_label(parent, text, category="Error", surface=surface, weight="Normal", **kwargs)
+
+    # ================================================================================================
+    # INPUT WIDGETS
+    # ================================================================================================
+    def button(self, parent: tk.Misc, text: str = "", **kwargs: Any) -> ttk.Button:
         return make_button(parent, text=text, **kwargs)
 
-    def entry(self, parent, **kwargs):
+    def entry(self, parent: tk.Misc, **kwargs: Any) -> ttk.Entry:
         return make_entry(parent, **kwargs)
 
-    def textarea(self, parent, **kwargs):
+    def textarea(self, parent: tk.Misc, **kwargs: Any) -> scrolledtext.ScrolledText:
         return make_textarea(parent, **kwargs)
 
-    def combobox(self, parent, values=None, **kwargs):
+    def combobox(
+        self,
+        parent: tk.Misc,
+        values: Optional[list[Any]] = None,
+        **kwargs: Any,
+    ) -> ttk.Combobox:
         return make_combobox(parent, values=values, **kwargs)
 
-    # --- choice controls -------------------------------------------------------------------------
-    def checkbox(self, parent, text, variable, **kwargs):
+    # ================================================================================================
+    # CHOICE CONTROLS (checkbox, radio, switch)
+    # ================================================================================================
+    def checkbox(
+        self,
+        parent: tk.Misc,
+        text: str,
+        variable: tk.Variable,
+        **kwargs: Any,
+    ) -> ttk.Checkbutton:
         return make_checkbox(parent, text, variable, **kwargs)
 
-    def radio(self, parent, text, variable, value, **kwargs):
+    def radio(
+        self,
+        parent: tk.Misc,
+        text: str,
+        variable: tk.Variable,
+        value: Any,
+        **kwargs: Any,
+    ) -> ttk.Radiobutton:
         return make_radio(parent, text, variable, value, **kwargs)
 
-    def switch(self, parent, text, variable, **kwargs):
+    def switch(
+        self,
+        parent: tk.Misc,
+        text: str,
+        variable: tk.Variable,
+        **kwargs: Any,
+    ) -> ttk.Checkbutton:
         return make_switch(parent, text, variable, **kwargs)
 
-    # --- structural ------------------------------------------------------------------------------
-    def frame(self, parent, **kwargs):
+    # ================================================================================================
+    # STRUCTURAL PRIMITIVES
+    # ================================================================================================
+    def frame(self, parent: tk.Misc, **kwargs: Any) -> ttk.Frame:
         return make_frame(parent, **kwargs)
 
-    def divider(self, parent, **kwargs):
+    def divider(self, parent: tk.Misc, **kwargs: Any) -> ttk.Frame:
         return make_divider(parent, **kwargs)
 
-    def spacer(self, parent, height=8, **kwargs):
+    def spacer(
+        self,
+        parent: tk.Misc,
+        height: int = 8,
+        **kwargs: Any,
+    ) -> ttk.Frame:
         return make_spacer(parent, height=height, **kwargs)
+
 
 # ====================================================================================================
 # 8. SANDBOX / MAIN TEST WINDOW
@@ -976,7 +1424,6 @@ class UIPrimitives:
 # Developer-only sandbox:
 #   - Demonstrates each primitive in a simple test window.
 #   - Not used by production code; runs only when this file is executed directly.
-#   - Hybrid debugging (Option C): concise but informative diagnostics.
 # ====================================================================================================
 
 def sandbox() -> None:
@@ -984,128 +1431,273 @@ def sandbox() -> None:
     Minimal sandbox window to exercise widget primitives.
 
     Demonstrates:
-        - Textual primitives (label, heading, status labels).
-        - Input widgets (entry, combobox, textarea).
+        - Text labels (primary/secondary, normal/bold, card labels).
+        - Full 5-tier heading system (window, page, section on primary/secondary).
+        - Status labels (info/success/warning/error).
+        - Input widgets (entry, combobox, textarea, button).
         - Choice controls (checkbox, radio, switch).
-        - Structural primitives (divider, spacer).
+        - Structural primitives (frame, divider, spacer).
+
+    Notes:
+        - This function creates its own Tk root and ttk.Style instance.
+        - It applies configure_ttk_styles(...) to ensure the theme is active.
+        - Intended for developer QA only — not used by production code.
     """
-    logger.info("=== G01b_widget_primitives.py — Sandbox Start ===")
+    logger.info("=== G01c_widget_primitives.py — Sandbox Start ===")
 
-    # -------------------------------------------------------------------------------------------
-    # Window & style initialisation (ttkbootstrap if available, else classic Tk/ttk)
-    # -------------------------------------------------------------------------------------------
-    try:
-        root = tk.Tk()
-        style_obj = ttk.Style()
-        logger.info("[G01b] Sandbox: using standard Tk/ttk.")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[G01b] Sandbox: ttkbootstrap not available (%s); using standard Tk/ttk.",
-            exc,
-        )
-        root = tk.Tk()
-        style_obj = ttk.Style()
+    # Window & style initialisation
+    root = tk.Tk()  # type: ignore[name-defined]
+    style_obj = ttk.Style()  # type: ignore[name-defined]
 
-    root.title("G01b Widget Primitives Sandbox")
+    root.title("G01c Widget Primitives Sandbox")
     root.geometry(f"{FRAME_SIZE_H}x{FRAME_SIZE_V}")
     root.configure(bg=GUI_COLOUR_BG_PRIMARY)
 
     # Apply global ttk styles
     configure_ttk_styles(style_obj)  # type: ignore[arg-type]
-    logger.info("[G01b] Sandbox: configure_ttk_styles applied successfully.")
+    logger.info("[G01c] Sandbox: configure_ttk_styles applied successfully.")
 
-    # Check that named fonts from G01a are available
-    has_named_fonts = True
-    for name in (FONT_NAME_BASE, FONT_NAME_HEADING, FONT_NAME_SECTION_HEADING):
-        if not name:
-            has_named_fonts = False
-            break
-        try:
-            tkFont.nametofont(name)  # type: ignore[name-defined]
-        except Exception:  # noqa: BLE001
-            has_named_fonts = False
-            break
+    ui = UIPrimitives(root)
 
-    logger.info(
-        "[G01b] Sandbox: named fonts available=%s "
-        "(BASE=%r HEADING=%r SECTION=%r)",
-        has_named_fonts,
-        FONT_NAME_BASE,
-        FONT_NAME_HEADING,
-        FONT_NAME_SECTION_HEADING,
+    # ================================================================================================
+    # SCROLLABLE OUTER CONTAINER
+    # ================================================================================================
+    # Create a canvas with scrollbar for the entire content
+    outer_frame = ui.frame(root)
+    outer_frame.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(outer_frame, bg=GUI_COLOUR_BG_PRIMARY, highlightthickness=0)  # type: ignore[name-defined]
+    scrollbar = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)  # type: ignore[name-defined]
+    
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    # Inner frame that holds all content
+    container = ui.frame(canvas)
+    canvas_window = canvas.create_window((0, 0), window=container, anchor="nw")
+
+    # Configure canvas scrolling
+    def on_frame_configure(event: Any) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def on_canvas_configure(event: Any) -> None:
+        canvas.itemconfig(canvas_window, width=event.width)
+
+    container.bind("<Configure>", on_frame_configure)
+    canvas.bind("<Configure>", on_canvas_configure)
+
+    # Enable mousewheel scrolling
+    def on_mousewheel(event: Any) -> None:
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+    # Add padding inside the container
+    content = ui.frame(container)
+    content.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
+
+    # ================================================================================================
+    # HEADINGS DEMO
+    # ================================================================================================
+    ui.heading_window(content, "G01c Widget Primitives — Live Sandbox").pack(
+        anchor="w",
+        pady=(0, 10),
     )
 
-    # -------------------------------------------------------------------------------------------
-    # Build demo content
-    # -------------------------------------------------------------------------------------------
-    container = ttk.Frame(root)
-    container.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
+    ui.heading_primary(content, "Primary Surface — Headings & Labels").pack(
+        anchor="w",
+        pady=(0, 4),
+    )
 
-    # Textual widgets
-    make_heading(container, "Widget Primitives Demo").pack(anchor="w", pady=(0, 8))
-    make_label(container, "This is a standard label.").pack(anchor="w", pady=2)
-    make_subheading(container, "Subheading text").pack(anchor="w", pady=(8, 2))
-    make_status_label(container, "Info status", status="info").pack(anchor="w", pady=1)
-    make_status_label(container, "Success status", status="success").pack(anchor="w", pady=1)
-    make_status_label(container, "Warning status", status="warning").pack(anchor="w", pady=1)
-    make_status_label(container, "Error status", status="error").pack(anchor="w", pady=1)
+    ui.section_heading_primary(content, "Primary Section Heading").pack(
+        anchor="w",
+        pady=(0, 8),
+    )
 
-    make_divider(container).pack(fill="x", pady=(10, 10))
+    # Primary labels
+    ui.label_primary(
+        content,
+        "Primary label — normal body text on primary surface.",
+    ).pack(anchor="w", pady=2)
 
-    # Inputs
-    make_label(container, "Entry:").pack(anchor="w")
-    make_entry(container, width=30).pack(anchor="w", pady=(0, 6))
+    ui.label_primary_bold(
+        content,
+        "Primary label — bold body text on primary surface.",
+    ).pack(anchor="w", pady=2)
 
-    make_label(container, "Combobox:").pack(anchor="w")
-    make_combobox(
-        container,
+    ui.spacer(content, height=6).pack(fill="x")
+
+    # Status labels
+    ui.status(content, "Info status (Primary.Normal.TLabel)", status="info").pack(
+        anchor="w",
+        pady=1,
+    )
+    ui.success(content, "Success status (Success.TLabel)").pack(anchor="w", pady=1)
+    ui.warning(content, "Warning status (Warning.TLabel)").pack(anchor="w", pady=1)
+    ui.error(content, "Error status (Error.TLabel)").pack(anchor="w", pady=1)
+
+    ui.divider(content).pack(fill="x", pady=(10, 10))
+
+    # ================================================================================================
+    # SECONDARY / CARD SURFACE DEMO
+    # ================================================================================================
+    # Note: Secondary headings should be placed ON secondary surfaces (inside cards/panels)
+    # First, show the heading on primary surface explaining what comes next
+    ui.label_primary(
+        content,
+        "Below: Secondary surface styles (headings and labels with Secondary background):",
+    ).pack(anchor="w", pady=(0, 4))
+
+    # Create a secondary surface frame to demonstrate secondary styles
+    secondary_panel = ui.frame(content, style="SectionBody.TFrame")
+    secondary_panel.pack(fill="x", pady=(4, 8), padx=4)
+
+    ui.heading_secondary(secondary_panel, "Secondary / Card Surface").pack(
+        anchor="w",
+        padx=8,
+        pady=(8, 4),
+    )
+
+    ui.section_heading_secondary(secondary_panel, "Section Heading on Card Surface").pack(
+        anchor="w",
+        padx=8,
+        pady=(0, 6),
+    )
+
+    card = ui.frame(secondary_panel, style="Card.TFrame")
+    card.pack(fill="x", pady=(4, 8), padx=8)
+
+    ui.label_card(
+        card,
+        "Card label — Card.TLabel inside Card.TFrame.",
+    ).pack(anchor="w", padx=8, pady=(6, 2))
+
+    ui.label_secondary(
+        card,
+        "Secondary label — normal body text on card surface.",
+    ).pack(anchor="w", padx=8, pady=2)
+
+    ui.label_secondary_bold(
+        card,
+        "Secondary label — bold body text on card surface.",
+    ).pack(anchor="w", padx=8, pady=(0, 6))
+
+    ui.divider(content).pack(fill="x", pady=(10, 10))
+
+    # ================================================================================================
+    # INPUT WIDGETS DEMO
+    # ================================================================================================
+    ui.heading_primary(content, "Input Widgets").pack(anchor="w", pady=(0, 4))
+    ui.section_heading_primary(content, "Entry, Combobox, Textarea, Buttons").pack(
+        anchor="w",
+        pady=(0, 6),
+    )
+
+    # Entry
+    ui.label_primary(content, "Entry:").pack(anchor="w")
+    ui.entry(content, width=32).pack(anchor="w", pady=(0, 6))
+
+    # Combobox
+    ui.label_primary(content, "Combobox:").pack(anchor="w")
+    ui.combobox(
+        content,
         values=["Option A", "Option B", "Option C"],
         state="readonly",
-        width=28,
+        width=30,
     ).pack(anchor="w", pady=(0, 6))
 
-    make_label(container, "Textarea:").pack(anchor="w")
-    make_textarea(container, height=5).pack(fill="both", expand=True, pady=(0, 6))
+    # Textarea
+    ui.label_primary(content, "Textarea (ScrolledText):").pack(anchor="w")
+    ui.textarea(content, height=5).pack(fill="both", expand=True, pady=(0, 8))
 
-    # Choice controls
+    # Buttons
+    button_row = ui.frame(content)
+    button_row.pack(anchor="w", pady=(4, 8))
+
+    ui.button(button_row, text="Primary Button").pack(side="left", padx=(0, 8))
+    ui.button(
+        button_row,
+        text="Secondary Button",
+        style="Secondary.TButton",
+    ).pack(side="left")
+
+    ui.divider(content).pack(fill="x", pady=(10, 10))
+
+    # ================================================================================================
+    # CHOICE CONTROLS DEMO
+    # ================================================================================================
+    ui.heading_primary(content, "Choice Controls").pack(anchor="w", pady=(0, 4))
+    ui.section_heading_primary(content, "Checkbox, Radio Group, Switch").pack(
+        anchor="w",
+        pady=(0, 6),
+    )
+
+    # Checkbox
     chk_var = tk.BooleanVar(value=True)  # type: ignore[name-defined]
-    make_checkbox(container, "Enable feature X", variable=chk_var).pack(anchor="w", pady=(8, 2))
+    ui.checkbox(content, "Enable feature X", variable=chk_var).pack(
+        anchor="w",
+        pady=(2, 4),
+    )
 
+    # Radio group
     radio_var = tk.StringVar(value="A")  # type: ignore[name-defined]
-    make_subheading(container, "Radio group").pack(anchor="w", pady=(8, 2))
-    make_radio(container, "Option A", variable=radio_var, value="A").pack(anchor="w")
-    make_radio(container, "Option B", variable=radio_var, value="B").pack(anchor="w")
+    ui.label_primary(content, "Radio group (A/B):").pack(
+        anchor="w",
+        pady=(8, 2),
+    )
+    ui.radio(content, "Option A", variable=radio_var, value="A").pack(anchor="w")
+    ui.radio(content, "Option B", variable=radio_var, value="B").pack(anchor="w")
 
+    # Switch
     switch_var = tk.BooleanVar(value=False)  # type: ignore[name-defined]
-    make_subheading(container, "Switch control").pack(anchor="w", pady=(8, 2))
-    make_switch(container, "Use experimental mode", variable=switch_var).pack(anchor="w")
+    ui.label_primary(content, "Switch control:").pack(
+        anchor="w",
+        pady=(8, 2),
+    )
+    ui.switch(content, "Use experimental mode", variable=switch_var).pack(
+        anchor="w",
+        pady=(0, 4),
+    )
 
-    logger.info("=== G01b_widget_primitives.py — Sandbox Ready (entering mainloop) ===")
+    ui.divider(content).pack(fill="x", pady=(10, 10))
+
+    # ================================================================================================
+    # STRUCTURAL PRIMITIVES DEMO
+    # ================================================================================================
+    ui.heading_primary(content, "Structural Primitives").pack(anchor="w", pady=(0, 4))
+    ui.section_heading_primary(content, "Frame + Spacer + Divider").pack(
+        anchor="w",
+        pady=(0, 6),
+    )
+
+    structural = ui.frame(content)
+    structural.pack(fill="x", pady=(4, 0))
+
+    ui.label_primary(
+        structural,
+        "This block is inside a TFrame created via ui.frame(...).",
+    ).pack(anchor="w", pady=(0, 4))
+
+    ui.spacer(structural, height=12).pack(fill="x")
+
+    ui.label_primary(
+        structural,
+        "Spacer above created vertical breathing room.",
+    ).pack(anchor="w", pady=(0, 4))
+
+    ui.divider(structural).pack(fill="x", pady=(6, 0))
+
+    logger.info("=== G01c_widget_primitives.py — Sandbox Ready (entering mainloop) ===")
     root.mainloop()
-    logger.info("=== G01b_widget_primitives.py — Sandbox End ===")
+    logger.info("=== G01c_widget_primitives.py — Sandbox End ===")
 
-# ====================================================================================================
-# 8A. INTEGRATE LAYOUT UTILITIES (G02a_layout_utils)
-# ----------------------------------------------------------------------------------------------------
-# The layout utility module (G02a_layout_utils.py) provides:
-#     • safe_grid / safe_pack
-#     • ensure_row_weights / ensure_column_weights
-#     • grid_form_row (standard 2-column form layout)
-#
-# These are *monkey-patched* onto the UIPrimitives class so every page can do:
-#
-#     ui.safe_grid(widget, row=0, column=0)
-#     ui.ensure_column_weights(frame, [0, 1])
-#     ui.grid_form_row(form_frame, 0, label, entry)
-#
-# This keeps layout code consistent, DRY, and theme-aware.
-# Call attach_layout_helpers(UIPrimitives) exactly once (here).
-# ====================================================================================================
-
-attach_layout_helpers(UIPrimitives)
 
 # ====================================================================================================
 # 9. MAIN GUARD
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
+    # Minimal logging initialisation for sandbox runs
+    init_logging()
     sandbox()

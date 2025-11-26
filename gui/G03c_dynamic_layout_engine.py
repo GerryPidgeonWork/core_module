@@ -221,24 +221,37 @@ def form_page(parent: tk.Widget):
 # 7. SANDBOX TEST
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
+    init_logging()
+    logger.info("=== G03c_dynamic_layout_engine.py — Sandbox Start ===")
+
+    from gui.G01c_widget_primitives import make_label
+
     # Quick layout test window
     root = tk.Tk()
-    root.title("G04 Layout Engine – Sandbox")
+    root.title("G03c Layout Engine – Sandbox")
     root.geometry("800x600")
 
     page = make_page_frame(root)
     page.pack(fill="both", expand=True)
 
-    ttk.Label(page, text="Layout Engine Sandbox").grid(row=0, column=0, sticky="w", pady=(0, GUTTER))
+    make_label(
+        page,
+        "Layout Engine Sandbox",
+        category="WindowHeading",
+        surface="Primary",
+        weight="Bold",
+    ).grid(row=0, column=0, sticky="w", pady=(0, GUTTER))
 
     left, right = two_column_layout(page)
     left.grid(row=1, column=0, sticky="nsew")
     right.grid(row=2, column=0, sticky="nsew")
 
-    ttk.Label(left, text="Left Column").pack(pady=10)
-    ttk.Label(right, text="Right Column").pack(pady=10)
+    make_label(left, "Left Column", category="Body", surface="Primary", weight="Normal").pack(pady=10)
+    make_label(right, "Right Column", category="Body", surface="Primary", weight="Normal").pack(pady=10)
 
+    logger.info("=== G03c_dynamic_layout_engine.py — Entering mainloop ===")
     root.mainloop()
+    logger.info("=== G03c_dynamic_layout_engine.py — Sandbox End ===")
 
 # ====================================================================================================
 # 8. OPTIONAL DEBUGGING SUPPORT
@@ -248,12 +261,12 @@ if __name__ == "__main__":
 # ====================================================================================================
 
 LAYOUT_DEBUG = True
-_layout_logger = get_logger("G04_layout_engine")
+_layout_logger = get_logger("G03c_layout_engine")
 
 def debug(msg: str) -> None:
     """Internal conditional logger."""
     if LAYOUT_DEBUG:
-        _layout_logger.info(f"[G04] {msg}")
+        _layout_logger.info(f"[G03c] {msg}")
 
 
 def debug_grid(frame: tk.Widget) -> None:
@@ -263,7 +276,7 @@ def debug_grid(frame: tk.Widget) -> None:
     if not LAYOUT_DEBUG:
         return
 
-    log_divider(label="G04 Grid Debug")
+    log_divider(label="G03c Grid Debug")
     debug(f"Frame: {frame.winfo_pathname(frame.winfo_id())}")
 
     # Row/column weights
@@ -298,7 +311,7 @@ def debug_pack(frame: tk.Widget) -> None:
     if not LAYOUT_DEBUG:
         return
 
-    log_divider(label="G04 Pack Debug")
+    log_divider(label="G03c Pack Debug")
     debug(f"Frame: {frame.winfo_pathname(frame.winfo_id())}")
 
     for child in frame.winfo_children():
@@ -313,7 +326,7 @@ def debug_summary(frame: tk.Widget) -> None:
     if not LAYOUT_DEBUG:
         return
 
-    log_divider(label="G04 Layout Summary")
+    log_divider(label="G03c Layout Summary")
     debug(f"Frame: {frame.winfo_pathname(frame.winfo_id())}")
     debug(f"Children count: {len(frame.winfo_children())}")
 

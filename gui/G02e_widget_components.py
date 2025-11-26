@@ -2,49 +2,45 @@
 # G02e_widget_components.py
 # ----------------------------------------------------------------------------------------------------
 # Purpose:
-#   Provides reusable, app-level Tkinter/ttk widgets for all GUI modules.
+#   Provides reusable, app-level composite widgets for all GUI modules.
 #
-#   Hybrid approach:
-#       • Atomic widgets:
-#             - AppTitle         → Large page/window titles
-#             - SectionHeader    → Section headings within a window
-#             - InfoBanner       → Soft information banner (ℹ)
-#             - WarningBanner    → Warning/attention banner (⚠)
-#             - DangerBanner     → Error/critical banner (⛔)
-#             - ButtonRow        → Right-aligned row of action buttons
+#   COMPOSITE widgets (unique to this module):
+#       • InfoBanner       → Soft information banner with icon (ℹ)
+#       • WarningBanner    → Warning/attention banner with icon (⚠)
+#       • DangerBanner     → Error/critical banner with icon (⛔)
+#       • ButtonRow        → Right-aligned row of action buttons
+#       • SummaryBox       → Compact two-column key/value summary list
 #
-#       • Structured containers:
-#             - SectionContainer → Title + (optional) subtitle + bordered body area
-#             - Card             → Lightweight card with optional title and body
-#             - SummaryBox       → Compact two-column key/value summary list
+#   DEPRECATED (use these instead):
+#       • AppTitle         → Use make_label(..., category="WindowHeading")
+#       • SectionHeader    → Use make_label(..., category="SectionHeading")
+#       • SectionContainer → Use G02b_container_patterns.create_section_grid()
+#       • Card             → Use G02b_container_patterns.create_card_grid()
 #
 # Usage (example):
 #   from gui.G02e_widget_components import (
-#       AppTitle,
-#       SectionHeader,
 #       InfoBanner,
 #       WarningBanner,
 #       DangerBanner,
 #       ButtonRow,
-#       SectionContainer,
-#       Card,
 #       SummaryBox,
 #   )
 #
 #   class MyWindow(BaseGUI):
 #       def build_widgets(self):
-#           title = AppTitle(self.main_frame, text="Demo Window")
-#           title.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+#           banner = InfoBanner(self.main_frame, "Important information here")
+#           banner.pack(fill="x", pady=(0, 10))
 #
-#           section = SectionContainer(self.main_frame, title="Example Section")
-#           section.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-#
-#           ttk.Label(section.body, text="Inside the section").grid(row=0, column=0, sticky="w")
+#           buttons = ButtonRow(self.main_frame, buttons=[
+#               ("Save", self.on_save),
+#               ("Cancel", self.on_cancel),
+#           ])
+#           buttons.pack(fill="x")
 #
 # Integration:
-#   - Respects global fonts/colours from G01a_style_config (with safe fallbacks).
+#   - Colours from G01a_style_config.
 #   - Intended to be used from BaseGUI subclasses (G01e_gui_base).
-#   - Plays nicely with layout primitives and style engine, but has no hard dependency.
+#   - Works with G01c widget primitives and G02b container patterns.
 #
 # ----------------------------------------------------------------------------------------------------
 # Author:       Gerry Pidgeon
@@ -101,209 +97,84 @@ logger = get_logger(__name__)
 
 # --- Additional project-level imports (append below this line only) ----------------------------------
 
-from gui.G00a_gui_packages import tk, ttk  # Explicit imports for classes
+from gui.G00a_gui_packages import tk, ttk
 from gui.G01e_gui_base import BaseGUI
-
-# Import style configuration in a SAFE way (no hard dependency on specific constant names)
-try:
-    import gui.G01a_style_config as style
-except Exception:  # pragma: no cover - extremely defensive
-    style = None
+from gui.G01a_style_config import (
+    GUI_COLOUR_BG_PRIMARY,
+    GUI_COLOUR_BG_SECONDARY,
+    GUI_COLOUR_STATUS_SUCCESS,
+    GUI_COLOUR_STATUS_WARNING,
+    GUI_COLOUR_STATUS_ERROR,
+    COLOUR_STATUS_GREEN,
+    COLOUR_STATUS_AMBER,
+    COLOUR_STATUS_RED,
+    COLOUR_PRIMARY_LIGHT,
+    COLOUR_SECONDARY_LIGHT,
+    COLOUR_SECONDARY_DARK,
+    TEXT_COLOUR_PRIMARY,
+    TEXT_COLOUR_SECONDARY,
+    GUI_FONT_FAMILY,
+    GUI_FONT_SIZE_DEFAULT,
+    FRAME_PADDING,
+)
+from gui.G01c_widget_primitives import make_label, make_button
+from gui.G02b_container_patterns import create_section_grid, create_card_grid
 
 
 # ====================================================================================================
-# 3. STYLE ACCESS HELPERS — SAFE ACCESS TO STYLE CONSTANTS
+# 3. COLOUR CONSTANTS FOR BANNERS (derived from G01a)
 # ----------------------------------------------------------------------------------------------------
-def get_first_font_family(candidate):
-    """
-    Description:
-        Normalise a font family configuration to a single Tk-compatible family name.
+# Banner backgrounds use lighter tints of the status colours
+# Banner borders use the status colours directly
 
-    Args:
-        candidate:
-            Either:
-                • A single family string (e.g. "Segoe UI")
-                • A list/tuple of family names (preference order)
-                • None (no configured family)
+COLOUR_INFO_BG = COLOUR_PRIMARY_LIGHT
+COLOUR_INFO_BORDER = GUI_COLOUR_STATUS_SUCCESS  # Using success colour for info (teal-ish)
 
-    Returns:
-        str:
-            A single font family string. Falls back to "Segoe UI" if no valid
-            candidate is provided.
+COLOUR_WARNING_BG = "#FEF3C7"  # Light amber tint
+COLOUR_WARNING_BORDER = COLOUR_STATUS_AMBER
 
-    Raises:
-        None.
+COLOUR_DANGER_BG = "#FEE2E2"  # Light red tint
+COLOUR_DANGER_BORDER = COLOUR_STATUS_RED
 
-    Notes:
-        - This function is defensive: it never raises on bad input.
-        - Intended for internal use by build_font_tuple.
-    """
-    if candidate is None:
-        return "Segoe UI"
-    if isinstance(candidate, (list, tuple)):
-        return candidate[0]
-    return candidate
-
-
-def build_font_tuple(size_key: str, default_size: int, weight: str | None = None):
-    """
-    Description:
-        Build a Tk font tuple using values from gui.G01a_style_config where possible,
-        with safe fallbacks when the style module or attributes are missing.
-
-    Args:
-        size_key:
-            Name of the size attribute on the style module
-            (e.g. "GUI_FONT_SIZE_HEADING").
-        default_size:
-            Fallback font size used when style is missing or incomplete.
-        weight:
-            Optional font weight ("bold", etc.). If None, the returned tuple is
-            (family, size). If provided, returns (family, size, weight).
-
-    Returns:
-        tuple:
-            A Tk-compatible font tuple suitable for use as the 'font' option on
-            Tk/ttk widgets.
-
-    Raises:
-        None.
-
-    Notes:
-        - Prefers style.GUI_FONT_DISPLAY, then style.GUI_FONT_PRIMARY_FAMILY.
-        - Falls back to "Segoe UI" and default_size if style is unavailable.
-    """
-    family = None
-    size = default_size
-
-    if style is not None:
-        family = getattr(style, "GUI_FONT_DISPLAY", None)
-        if family is None:
-            family = getattr(style, "GUI_FONT_PRIMARY_FAMILY", None)
-        size = getattr(style, size_key, getattr(style, "GUI_FONT_SIZE_DEFAULT", default_size))
-
-    family = get_first_font_family(family)
-    if weight:
-        return (family, size, weight)
-    return (family, size)
-
-
-def get_style_colour(colour_attribute_name: str, fallback: str):
-    """
-    Description:
-        Safely retrieve a colour value from gui.G01a_style_config, falling back
-        to the supplied default when the style module or attribute is missing.
-
-    Args:
-        colour_attribute_name:
-            Attribute name on the style module (e.g. "COLOUR_TEXT_DEFAULT").
-        fallback:
-            Hex colour string to use when the style attribute is unavailable.
-
-    Returns:
-        str:
-            A hex colour string suitable for Tk/ttk foreground/background values.
-
-    Raises:
-        None.
-
-    Notes:
-        - This function never raises on missing style modules or attributes.
-        - Keeps widget components resilient when the theme evolves.
-    """
-    if style is not None and hasattr(style, colour_attribute_name):
-        return getattr(style, colour_attribute_name)
-    return fallback
-
-
-# Common colour lookups (names chosen to be descriptive but safe)
-COLOUR_BG_SECTION = get_style_colour("COLOUR_BRAND_WHITE", "#FFFFFF")
-COLOUR_BG_CARD = get_style_colour("COLOUR_CARD_BG", "#FFFFFF")
-COLOUR_BORDER_LIGHT = get_style_colour("COLOUR_BORDER_LIGHT", "#D0D4DA")
-COLOUR_TEXT_DEFAULT = get_style_colour("COLOUR_TEXT_DEFAULT", "#1F2933")
-COLOUR_TEXT_MUTED = get_style_colour("COLOUR_TEXT_MUTED", "#6B7280")
-
-COLOUR_INFO_BG = get_style_colour("COLOUR_INFO_BG", "#E5F3FF")
-COLOUR_INFO_BORDER = get_style_colour("COLOUR_INFO_BORDER", "#60A5FA")
-
-COLOUR_WARNING_BG = get_style_colour("COLOUR_WARNING_BG", "#FEF3C7")
-COLOUR_WARNING_BORDER = get_style_colour("COLOUR_WARNING_BORDER", "#FBBF24")
-
-COLOUR_DANGER_BG = get_style_colour("COLOUR_DANGER_BG", "#FEE2E2")
-COLOUR_DANGER_BORDER = get_style_colour("COLOUR_DANGER_BORDER", "#F87171")
+COLOUR_BG_SECTION = GUI_COLOUR_BG_PRIMARY
+COLOUR_BG_CARD = GUI_COLOUR_BG_PRIMARY
+COLOUR_BORDER_LIGHT = COLOUR_SECONDARY_DARK
+COLOUR_TEXT_DEFAULT = TEXT_COLOUR_SECONDARY
+COLOUR_TEXT_MUTED = TEXT_COLOUR_SECONDARY
 
 
 # ====================================================================================================
 # 4. ATOMIC WIDGETS
 # ----------------------------------------------------------------------------------------------------
+# NOTE: AppTitle and SectionHeader are DEPRECATED. Use make_label() instead.
+# They are kept for backwards compatibility only.
+
 class AppTitle(ttk.Label):
     """
+    DEPRECATED: Use make_label(parent, text, category="WindowHeading", surface="Primary", weight="Bold")
+
     Description:
         Large page-level title label for the current window.
-
-    Args:
-        parent:
-            Parent widget (typically BaseGUI.main_frame or a section body).
-        text:
-            Title text to display.
-        **kwargs:
-            Additional ttk.Label keyword arguments.
-
-    Returns:
-        None.
-
-    Raises:
-        None.
-
-    Notes:
-        - Uses the display/heading font from gui.G01a_style_config where available.
-        - Callers can override the font by passing font=... in **kwargs.
     """
 
     def __init__(self, parent, text: str, **kwargs):
-        font = kwargs.pop("font", build_font_tuple("GUI_FONT_SIZE_HEADING", 14, weight="bold"))
-        super().__init__(parent, text=text, font=font, **kwargs)
+        logger.warning("[G02e] AppTitle is deprecated. Use make_label(..., category='WindowHeading') instead.")
+        style_name = kwargs.pop("style", "Primary.WindowHeading.Bold.TLabel")
+        super().__init__(parent, text=text, style=style_name, **kwargs)
 
 
 class SectionHeader(ttk.Label):
     """
+    DEPRECATED: Use make_label(parent, text, category="SectionHeading", surface="Primary", weight="Bold")
+
     Description:
         Section header text within a window or container.
-
-    Args:
-        parent:
-            Parent widget for the header.
-        text:
-            Header text to display.
-        **kwargs:
-            Additional ttk.Label keyword arguments. Supports:
-                - style: explicit ttk style name
-                - font:  explicit font override
-
-    Returns:
-        None.
-
-    Raises:
-        None.
-
-    Notes:
-        - Defaults to style "SectionHeading.TLabel" if no explicit style is provided.
-        - If style is "SectionHeading.TLabel" and no font is specified, uses the
-          heading font from gui.G01a_style_config.
     """
 
     def __init__(self, parent, text: str, **kwargs):
-        # Prefer existing style if present; otherwise specify font directly.
-        style_name = kwargs.pop("style", None)
-        if style_name is None:
-            style_name = "SectionHeading.TLabel"
-
-        # Only set font explicitly if caller did not override style.
-        font = kwargs.pop("font", None)
-        if font is None and style_name == "SectionHeading.TLabel":
-            font = build_font_tuple("GUI_FONT_SIZE_HEADING", 14, weight="bold")
-
-        super().__init__(parent, text=text, style=style_name, font=font, **kwargs)
+        logger.warning("[G02e] SectionHeader is deprecated. Use make_label(..., category='SectionHeading') instead.")
+        style_name = kwargs.pop("style", "Primary.SectionHeading.Bold.TLabel")
+        super().__init__(parent, text=text, style=style_name, **kwargs)
 
 
 class InfoBanner(ttk.Frame):
@@ -333,7 +204,7 @@ class InfoBanner(ttk.Frame):
     Notes:
         - Uses plain Tk frames internally for precise control over background
           and border colours.
-        - Colours are theme-aware via get_style_colour.
+        - Colours are derived from G01a_style_config.
     """
 
     def __init__(self, parent, text: str, icon: str = "ℹ", **kwargs):
@@ -358,6 +229,7 @@ class InfoBanner(ttk.Frame):
             text=icon,
             bg=COLOUR_INFO_BG,
             fg=COLOUR_TEXT_DEFAULT,
+            font=(GUI_FONT_FAMILY, GUI_FONT_SIZE_DEFAULT),
         )
         icon_label.pack(side="left", anchor="n", padx=(0, 6))
 
@@ -368,6 +240,7 @@ class InfoBanner(ttk.Frame):
             fg=COLOUR_TEXT_DEFAULT,
             justify="left",
             wraplength=600,
+            font=(GUI_FONT_FAMILY, GUI_FONT_SIZE_DEFAULT),
         )
         text_label.pack(side="left", anchor="w", fill="x", expand=True)
 
@@ -532,38 +405,14 @@ class ButtonRow(ttk.Frame):
 
 
 # ====================================================================================================
-# 5. STRUCTURED CONTAINERS
+# 5. STRUCTURED CONTAINERS (DEPRECATED - use G02b_container_patterns instead)
 # ----------------------------------------------------------------------------------------------------
 class SectionContainer(ttk.Frame):
     """
+    DEPRECATED: Use G02b_container_patterns.create_section_grid() instead.
+
     Description:
         Section container with a title above and a bordered content area.
-
-    Layout:
-        Title (SectionHeader)
-        [ Bordered body frame ]
-
-    Args:
-        parent:
-            Parent widget.
-        title:
-            Section title text (required).
-        subtitle:
-            Optional subtitle/explanatory text.
-        body_padding:
-            Tuple (left, top, right, bottom) padding for the inner body frame.
-        **kwargs:
-            Additional ttk.Frame keyword arguments.
-
-    Returns:
-        None.
-
-    Raises:
-        None.
-
-    Notes:
-        - Widgets should be added to section.body, not directly to SectionContainer.
-        - The container configures its own grid to make the body stretch with the window.
     """
 
     def __init__(
@@ -574,21 +423,28 @@ class SectionContainer(ttk.Frame):
         body_padding: tuple[int, int, int, int] = (10, 10, 10, 10),
         **kwargs,
     ):
+        logger.warning("[G02e] SectionContainer is deprecated. Use create_section_grid() from G02b instead.")
         super().__init__(parent, **kwargs)
 
         self.columnconfigure(0, weight=1)
 
-        # Title row
-        self.title_label = SectionHeader(self, text=title)
+        # Title row using make_label
+        self.title_label = make_label(
+            self,
+            title,
+            category="SectionHeading",
+            surface="Primary",
+            weight="Bold",
+        )
         self.title_label.grid(row=0, column=0, sticky="w", padx=(0, 0), pady=(0, 2))
 
         if subtitle:
-            self.subtitle_label = ttk.Label(
+            self.subtitle_label = make_label(
                 self,
-                text=subtitle,
-                foreground=COLOUR_TEXT_MUTED,
-                wraplength=800,
-                justify="left",
+                subtitle,
+                category="Body",
+                surface="Primary",
+                weight="Normal",
             )
             self.subtitle_label.grid(row=1, column=0, sticky="w", pady=(0, 6))
             body_row = 2
@@ -625,32 +481,14 @@ class SectionContainer(ttk.Frame):
 
 class Card(ttk.Frame):
     """
+    DEPRECATED: Use G02b_container_patterns.create_card_grid() instead.
+
     Description:
         Lightweight card container used for dashboards or summary tiles.
-
-    Layout:
-        Optional title
-        Body frame (for arbitrary content)
-
-    Args:
-        parent:
-            Parent widget.
-        title:
-            Optional card title text.
-        **kwargs:
-            Additional ttk.Frame keyword arguments.
-
-    Returns:
-        None.
-
-    Raises:
-        None.
-
-    Notes:
-        - Widgets should be added to card.body.
     """
 
     def __init__(self, parent, title: str | None = None, **kwargs):
+        logger.warning("[G02e] Card is deprecated. Use create_card_grid() from G02b instead.")
         super().__init__(parent, **kwargs)
         self.columnconfigure(0, weight=1)
 
@@ -671,13 +509,12 @@ class Card(ttk.Frame):
         row_index = 0
         self.title_label = None
         if title:
-            self.title_label = tk.Label(
+            self.title_label = make_label(
                 inner_frame,
-                text=title,
-                bg=COLOUR_BG_CARD,
-                fg=COLOUR_TEXT_DEFAULT,
-                font=build_font_tuple("GUI_FONT_SIZE_HEADING", 12, weight="bold"),
-                anchor="w",
+                title,
+                category="SectionHeading",
+                surface="Secondary",
+                weight="Bold",
             )
             self.title_label.grid(row=row_index, column=0, sticky="w", pady=(0, 4))
             row_index += 1
@@ -832,18 +669,23 @@ class WidgetComponentsDemoWindow(BaseGUI):
         # Make sure main_frame stretches
         self.main_frame.columnconfigure(0, weight=1)
 
-        # Title
-        title = AppTitle(self.main_frame, text="G02e Widget Components — Demo")
+        # Title - using make_label instead of deprecated AppTitle
+        title = make_label(
+            self.main_frame,
+            "G02e Widget Components — Demo",
+            category="WindowHeading",
+            surface="Primary",
+            weight="Bold",
+        )
         title.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 4))
 
-        subtitle = ttk.Label(
+        subtitle = make_label(
             self.main_frame,
-            text=(
-                "Demonstrates atomic widgets (titles, banners, button rows) "
-                "and structured containers (sections, cards, summary boxes)."
-            ),
-            wraplength=900,
-            foreground=COLOUR_TEXT_MUTED,
+            "Demonstrates banners, button rows, and summary boxes. "
+            "Note: AppTitle, SectionHeader, SectionContainer, Card are deprecated.",
+            category="Body",
+            surface="Primary",
+            weight="Normal",
         )
         subtitle.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 12))
 
@@ -871,28 +713,25 @@ class WidgetComponentsDemoWindow(BaseGUI):
         )
         danger_banner.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 10))
 
-        # Main section
-        section = SectionContainer(
+        # Section using G02b pattern instead of deprecated SectionContainer
+        section = create_section_grid(
             self.main_frame,
-            title="Main Section Container",
-            subtitle="SectionContainer wraps a title, optional subtitle, and a bordered body area.",
+            row=5,
+            column=0,
+            title="Section via G02b (Recommended)",
         )
-        section.grid(row=5, column=0, sticky="nsew", padx=16, pady=(10, 10))
-        self.main_frame.rowconfigure(5, weight=1)
+        self.main_frame.rowconfigure(5, weight=0)
 
-        # Inside section.body, add a card + summary box
+        # Inside section.body, add a summary box
         section.body.grid_columnconfigure(0, weight=1)
-        section.body.grid_columnconfigure(1, weight=1)
 
-        card = Card(section.body, title="Example Card")
-        card.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 6))
-        section.body.rowconfigure(0, weight=1)
-
-        ttk.Label(
-            card.body,
-            text="Use cards for grouped information or dashboard tiles.",
-            wraplength=350,
-        ).grid(row=0, column=0, sticky="w")
+        make_label(
+            section.body,
+            "Use create_section_grid() from G02b for sections.",
+            category="Body",
+            surface="Secondary",
+            weight="Normal",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
         summary = SummaryBox(
             section.body,
@@ -902,7 +741,7 @@ class WidgetComponentsDemoWindow(BaseGUI):
                 ("YOY vs LY", "+5.1%"),
             ],
         )
-        summary.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=(0, 6))
+        summary.grid(row=1, column=0, sticky="nsew", pady=(0, 6))
 
         # Button row at the bottom
         button_row = ButtonRow(
@@ -944,5 +783,8 @@ class WidgetComponentsDemoWindow(BaseGUI):
 # 7. MAIN
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
+    init_logging()
+    logger.info("=== G02e_widget_components demo start ===")
     app = WidgetComponentsDemoWindow()
     app.mainloop()
+    logger.info("=== G02e_widget_components demo end ===")

@@ -8,7 +8,7 @@
 #
 #       • FormBuilder
 #           - Builds a complete form from a declarative schema.
-#           - Uses themed widget primitives (G01b_widget_primitives).
+#           - Uses themed widget primitives (G01c_widget_primitives).
 #           - Uses standardised layout helpers (G02a_layout_utils.grid_form_row).
 #           - Exposes a simple value/validation API.
 #
@@ -247,7 +247,13 @@ class FormBuilder:
             # ---------------------------------------------------------------------------------------
             # Label widget (left column)
             # ---------------------------------------------------------------------------------------
-            label_widget = make_label(self.parent, label_text)
+            label_widget = make_label(
+                self.parent,
+                label_text,
+                category="Body",
+                surface="Primary",
+                weight="Normal",
+            )
 
             # ---------------------------------------------------------------------------------------
             # Field widget (right column) + variable binding
@@ -664,6 +670,7 @@ def run_demo() -> None:
         - This function is intended for manual testing only.
         - It is only invoked when this module is run as a script.
     """
+    init_logging()
     logger.info("=== G02c_form_patterns demo start ===")
 
     # -------------------------------------------------------------------------------------------
@@ -704,23 +711,28 @@ def run_demo() -> None:
         {"type": "text", "label": "Description", "key": "desc"},
     ]
 
-    # Simple padded container (no G02b dependency in the sandbox)
-    outer = bttk.Frame(root)
+    # Simple padded container
+    outer = ttk.Frame(root, style="SectionOuter.TFrame")
     outer.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
 
     # Heading
-    heading_label = make_label(outer, "G02c Form Patterns — Demo", fg=TEXT_COLOUR_PRIMARY)
-    heading_label.geometry_kwargs.setdefault("pady", (0, 8))  # type: ignore[attr-defined]
-    heading_label.pack(anchor="w", **heading_label.geometry_kwargs)  # type: ignore[arg-type]
+    heading_label = make_label(
+        outer,
+        "G02c Form Patterns — Demo",
+        category="WindowHeading",
+        surface="Primary",
+        weight="Bold",
+    )
+    heading_label.pack(anchor="w", pady=(0, 8))
 
     # Form container (grid-based)
-    form_frame = bttk.Frame(outer)
+    form_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
     form_frame.pack(fill="x")
 
     form = FormBuilder(form_frame, schema=schema)
 
     # Buttons row
-    buttons_row = bttk.Frame(outer)
+    buttons_row = ttk.Frame(outer, style="SectionOuter.TFrame")
     buttons_row.pack(fill="x", pady=(12, 0))
 
     def on_print() -> None:
@@ -732,8 +744,8 @@ def run_demo() -> None:
     def on_clear() -> None:
         form.clear()
 
-    print_btn = bttk.Button(buttons_row, text="Print Values / Errors", command=on_print)
-    clear_btn = bttk.Button(buttons_row, text="Clear", command=on_clear)
+    print_btn = ttk.Button(buttons_row, text="Print Values / Errors", command=on_print)
+    clear_btn = ttk.Button(buttons_row, text="Clear", command=on_clear)
 
     print_btn.pack(side="left")
     clear_btn.pack(side="left", padx=(8, 0))

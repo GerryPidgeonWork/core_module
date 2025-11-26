@@ -22,8 +22,8 @@
 #               ui.grid_form_row(parent, row_index, label_widget, field_widget, ...)
 #
 # Design:
-#   - Layout-only: no widget creation happens here (that lives in G01b_widget_primitives).
-#   - Styling is delegated to G01a_style_engine + G00a_style_config.
+#   - Layout-only: no widget creation happens here (that lives in G01c_widget_primitives).
+#   - Styling is delegated to G01b_style_engine + G01a_style_config.
 #   - Safe to import in any GUI module; no side-effects except when attach_layout_helpers is called.
 #
 # Debugging:
@@ -31,7 +31,7 @@
 #   - DEBUG_LAYOUT_HELPERS toggles extra diagnostics.
 #
 # Integration:
-#   from gui.G01d_layout_helpers import (
+#   from gui.G02a_layout_utils import (
 #       safe_grid, safe_pack,
 #       ensure_row_weights, ensure_column_weights,
 #       grid_form_row,
@@ -100,7 +100,7 @@ VERBOSE_LAYOUT_HELPERS: bool = False
 
 def _debug(message: str, *, verbose: bool = False) -> None:
     """
-    Controlled debug output for G01d_layout_helpers.
+    Controlled debug output for G02a_layout_utils.
 
     Args:
         message: Debug message to log.
@@ -110,14 +110,14 @@ def _debug(message: str, *, verbose: bool = False) -> None:
         return
     if verbose and not VERBOSE_LAYOUT_HELPERS:
         return
-    logger.debug("[G01d] %s", message)
+    logger.debug("[G02a] %s", message)
 
 
 # ====================================================================================================
 # 3. CORE LAYOUT HELPERS (FREE FUNCTIONS)
 # ----------------------------------------------------------------------------------------------------
 # These functions operate purely on Tk/ttk widgets and containers. They are layout-only and
-# do not create widgets themselves. G01b_widget_primitives is responsible for widget creation.
+# do not create widgets themselves. G01c_widget_primitives is responsible for widget creation.
 # ====================================================================================================
 
 def merge_geometry_kwargs(widget: Any, overrides: Dict[str, Any]) -> Dict[str, Any]:
@@ -313,7 +313,7 @@ def grid_form_row(
 # This function monkey-patches methods onto a UI factory / helper class WITHOUT importing it here.
 # Call this once from your UI module after the class is defined:
 #
-#   from gui.G01d_layout_helpers import attach_layout_helpers
+#   from gui.G02a_layout_utils import attach_layout_helpers
 #   attach_layout_helpers(UIPrimitives)   # or whatever your factory class is called
 #
 # After that, any instance gains:
@@ -422,15 +422,29 @@ def run_self_test() -> None:
     """
     Run a small visual sandbox to verify the layout helpers.
 
-    This is developer-only and is never called by production code.
+    Description:
+        Creates a simple form layout demonstrating safe_grid, safe_pack,
+        grid_form_row, and other layout utilities.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Raises:
+        None.
+
+    Notes:
+        - Developer-only; never called by production code.
     """
-    logger.info("=== G01d_layout_helpers.py — Self-Test Start ===")
+    init_logging()
+    logger.info("=== G02a_layout_utils.py — Self-Test Start ===")
 
     # Local imports to avoid hard dependencies for normal use
-    from gui.G01a_style_config import GUI_COLOUR_BG_PRIMARY  # type: ignore
-    from gui.G01b_style_engine import configure_ttk_styles   # type: ignore
-    from gui.G01c_widget_primitives import (                 # type: ignore
-        make_heading,
+    from gui.G01a_style_config import GUI_COLOUR_BG_PRIMARY
+    from gui.G01b_style_engine import configure_ttk_styles
+    from gui.G01c_widget_primitives import (
         make_label,
         make_entry,
         make_combobox,
@@ -438,7 +452,7 @@ def run_self_test() -> None:
     )
 
     root = tk.Tk()
-    root.title("G01d Layout Helpers Sandbox")
+    root.title("G02a Layout Utils Sandbox")
     root.geometry("800x480")
     root.configure(bg=GUI_COLOUR_BG_PRIMARY)
 
@@ -448,18 +462,35 @@ def run_self_test() -> None:
     outer = ttk.Frame(root, style="TFrame", padding=FRAME_PADDING)
     outer.pack(fill="both", expand=True)
 
-    heading = make_heading(outer, "G01d Layout Helpers Demo")
+    # Window heading
+    heading = make_label(
+        outer,
+        "G02a Layout Utils Demo",
+        category="WindowHeading",
+        surface="Primary",
+        weight="Bold",
+    )
     safe_pack(heading, anchor="w", pady=(0, 10))
+
+    # Section heading
+    section_head = make_label(
+        outer,
+        "Form Layout Example",
+        category="SectionHeading",
+        surface="Primary",
+        weight="Bold",
+    )
+    safe_pack(section_head, anchor="w", pady=(0, 6))
 
     form_frame = ttk.Frame(outer, style="TFrame")
     form_frame.pack(fill="x")
 
     # Two rows, standard label + field layout
-    name_label = make_label(form_frame, "Name:")
+    name_label = make_label(form_frame, "Name:", category="Body", surface="Primary", weight="Normal")
     name_entry = make_entry(form_frame, width=30)
     grid_form_row(form_frame, 0, name_label, name_entry)
 
-    cat_label = make_label(form_frame, "Category:")
+    cat_label = make_label(form_frame, "Category:", category="Body", surface="Primary", weight="Normal")
     cat_combo = make_combobox(form_frame, values=["A", "B", "C"], state="readonly", width=28)
     grid_form_row(form_frame, 1, cat_label, cat_combo)
 
@@ -467,14 +498,16 @@ def run_self_test() -> None:
 
     info = make_label(
         outer,
-        "Helpers: safe_grid, safe_pack, ensure_row_weights, "
-        "ensure_column_weights, grid_form_row.",
+        "Helpers: safe_grid, safe_pack, ensure_row_weights, ensure_column_weights, grid_form_row.",
+        category="Body",
+        surface="Primary",
+        weight="Normal",
     )
     safe_pack(info, anchor="w", pady=(8, 0))
 
-    logger.info("=== G01d_layout_helpers.py — Self-Test Ready ===")
+    logger.info("=== G02a_layout_utils.py — Self-Test Ready ===")
     root.mainloop()
-    logger.info("=== G01d_layout_helpers.py — Self-Test End ===")
+    logger.info("=== G02a_layout_utils.py — Self-Test End ===")
 
 
 if __name__ == "__main__":
