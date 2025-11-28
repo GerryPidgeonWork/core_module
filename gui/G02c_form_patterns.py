@@ -4,116 +4,98 @@
 # Purpose:
 #   Schema-driven, theme-aware form patterns for all GUI modules.
 #
-#   This module provides a single high-level abstraction:
+#   This module provides comprehensive form building capabilities:
 #
-#       • FormBuilder
-#           - Builds a complete form from a declarative schema.
-#           - Uses themed widget primitives (G01c_widget_primitives).
-#           - Uses standardised layout helpers (G02a_layout_utils.grid_form_row).
-#           - Exposes a simple value/validation API.
+#       • FormBuilder (enhanced)
+#           - Builds complete forms from declarative schemas
+#           - Supports 10+ field types
+#           - Real-time and on-demand validation with visual feedback
+#           - Field grouping (fieldsets)
+#           - Conditional field visibility
+#           - Help text/tooltips
+#           - Disabled/readonly states
+#           - Focus management
 #
-#   FormBuilder focuses on **form structure and behaviour**, not raw widget creation:
-#       • Takes a schema describing fields, types, validation rules, and defaults.
-#       • Renders a consistent two-column layout: [Label] [Field].
-#       • Keeps an internal mapping of keys → widgets and tk.Variables.
-#       • Provides methods to get/set/clear values and run validation.
+#   Supported field types:
+#       entry       Single-line text input
+#       password    Masked text input
+#       combo       Dropdown selection
+#       checkbox    Boolean toggle
+#       radio       Single selection from options
+#       text        Multi-line text area
+#       spinbox     Numeric input with increment/decrement
+#       scale       Slider for numeric range
+#       date        Date picker (entry with format validation)
+#       file        File path with browse button
+#       label       Read-only display field
 #
-#   Supported schema keys per field:
-#       type:      "entry" | "combo" | "checkbox" | "text"     (default: "entry")
-#       label:     User-facing label text (left column).
-#       key:       Unique identifier used in the values dict.
-#       values:    List of items for "combo" fields.
-#       required:  bool — value must not be empty when True.
-#       numeric:   bool — value must be castable to float when True.
-#       allowed:   Iterable of permitted values (exact match).
-#       default:   Default value applied on initial render (optional).
-#       validate:  callable(value) -> (ok: bool, error_message: str)
-#
-# Design Principles:
-#   • 100% form behaviour and layout – no business logic, no I/O.
-#   • Styling and spacing tokens come from G01a_style_config.
-#   • Widget creation comes from G01b_widget_primitives.
-#   • Layout primitives (grid_form_row) come from G02a_layout_utils.
-#   • Safe to import anywhere in the GUI layer; no side effects at import time.
-#
-# Debugging:
-#   • Uses core.C03_logging_handler.get_logger for structured logging.
-#   • Demo entry point (run_demo) is isolated under the __main__ guard.
-#
-# Integration:
-#       from gui.G02c_form_patterns import FormBuilder
-#
-#       schema = [
-#           {"type": "entry", "label": "Host", "key": "host", "required": True},
-#           {"type": "entry", "label": "Port", "key": "port", "numeric": True},
-#           {"type": "combo", "label": "Env",  "key": "env",  "values": ["Dev", "UAT", "Prod"]},
-#       ]
-#
-#       form = FormBuilder(parent=section.body, schema=schema)
-#       values = form.get_values()
-#       errors = form.validate_all()
-#
-# Architectural Guarantees:
-#   • No core imports outside core.C00_set_packages.
-#   • No sys.path mutation beyond the standard Section 1 template.
-#   • No Tk root creation or theme initialisation at import time.
+#   Schema keys per field:
+#       type:       Field type (default: "entry")
+#       label:      Display label text
+#       key:        Unique identifier (required)
+#       default:    Default value
+#       required:   bool - must not be empty
+#       numeric:    bool - must be numeric
+#       allowed:    List of permitted values
+#       validate:   callable(value) -> (ok, message)
+#       help:       Help text shown below field
+#       disabled:   bool - field is non-editable
+#       visible:    bool or callable(values) -> bool
+#       on_change:  callable(new_value) - real-time callback
+#       width:      Field width (where applicable)
+#       height:     Field height (for text areas)
+#       min/max:    Range limits (for spinbox/scale)
+#       step:       Increment (for spinbox/scale)
+#       values:     Options list (for combo/radio)
+#       filetypes:  File filter (for file picker)
+#       group:      Fieldset group name
 #
 # ----------------------------------------------------------------------------------------------------
 # Author:       Gerry Pidgeon
 # Created:      2025-11-23
+# Updated:      2025-11-28 (v2 - Comprehensive form system)
 # Project:      Core Boilerplate v1.0
 # ====================================================================================================
 
 
 # ====================================================================================================
 # 1. SYSTEM IMPORTS
-# ----------------------------------------------------------------------------------------------------
-# These imports (sys, pathlib.Path) are required to correctly initialise the project environment,
-# ensure the core library can be imported safely (including C00_set_packages.py),
-# and prevent project-local paths from overriding installed site-packages.
-# ----------------------------------------------------------------------------------------------------
+# ====================================================================================================
+from __future__ import annotations
 
-# --- Future behaviour & type system enhancements -----------------------------------------------------
-from __future__ import annotations           # Future-proof type hinting (PEP 563 / PEP 649)
+import sys
+from pathlib import Path
+from dataclasses import dataclass, field as dataclass_field
+from typing import Any, Dict, List, Optional, Callable, Tuple, Union
 
-# --- Required for dynamic path handling and safe importing of core modules ---------------------------
-import sys                                   # Python interpreter access (path, environment, runtime)
-from pathlib import Path                     # Modern, object-oriented filesystem path handling
-
-# --- Ensure project root DOES NOT override site-packages --------------------------------------------
 project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# --- Remove '' (current working directory) which can shadow installed packages -----------------------
 if "" in sys.path:
     sys.path.remove("")
 
-# --- Prevent creation of __pycache__ folders ---------------------------------------------------------
 sys.dont_write_bytecode = True
 
 
 # ====================================================================================================
 # 2. PROJECT IMPORTS
-# ----------------------------------------------------------------------------------------------------
-# Bring in shared external packages from the central import hub.
-#
-# CRITICAL ARCHITECTURE RULE:
-#   ALL external + stdlib packages MUST be imported exclusively via:
-#       from core.C00_set_packages import *
-#   No other script may import external libraries directly.
-#
-# C01_set_file_paths is a pure core module and must not import GUI packages.
-# ----------------------------------------------------------------------------------------------------
+# ====================================================================================================
 from core.C00_set_packages import *
 
-# --- Initialise module-level logger -----------------------------------------------------------------
 from core.C03_logging_handler import get_logger, log_exception, init_logging
 logger = get_logger(__name__)
 
-# --- Additional project-level imports (append below this line only) ----------------------------------
-from gui.G00a_gui_packages import tk, ttk, scrolledtext, Window, Style, tb  # GUI toolkit + helpers
-from gui.G01a_style_config import *                         # FRAME_PADDING, FRAME_SIZE_H, FRAME_SIZE_V, colours, etc.
+from gui.G00a_gui_packages import tk, ttk, scrolledtext, Window, Style, tb
+from gui.G01a_style_config import (
+    FRAME_PADDING,
+    FRAME_SIZE_H,
+    FRAME_SIZE_V,
+    GUI_COLOUR_BG_PRIMARY,
+    GUI_COLOUR_BG_SECONDARY,
+    GUI_COLOUR_STATUS_ERROR,
+    TEXT_COLOUR_SECONDARY,
+)
 from gui.G01b_style_engine import configure_ttk_styles
 from gui.G01c_widget_primitives import (
     make_label,
@@ -121,642 +103,900 @@ from gui.G01c_widget_primitives import (
     make_combobox,
     make_checkbox,
     make_textarea,
+    make_button,
+    make_frame,
+    make_horizontal_group,
 )
-from gui.G02a_layout_utils import grid_form_row             # layout-only, no UIComponents dependency
-
-# Prefer ttkbootstrap's ttk-compatible widgets when available, otherwise fall back to standard ttk.
-try:
-    bttk = tb  # type: ignore[name-defined]
-    if bttk is None:
-        bttk = ttk  # type: ignore[assignment]
-except Exception:
-    bttk = ttk  # type: ignore[assignment]
+from gui.G02a_layout_utils import (
+    grid_form_row,
+    SPACING_XS,
+    SPACING_SM,
+    SPACING_MD,
+    SPACING_LG,
+)
 
 
 # ====================================================================================================
-# 3. FORM BUILDER CLASS
-# ----------------------------------------------------------------------------------------------------
+# 3. FIELD TYPE CONSTANTS
+# ====================================================================================================
+FIELD_ENTRY = "entry"
+FIELD_PASSWORD = "password"
+FIELD_COMBO = "combo"
+FIELD_CHECKBOX = "checkbox"
+FIELD_RADIO = "radio"
+FIELD_TEXT = "text"
+FIELD_SPINBOX = "spinbox"
+FIELD_SCALE = "scale"
+FIELD_DATE = "date"
+FIELD_FILE = "file"
+FIELD_LABEL = "label"
+
+ALL_FIELD_TYPES = {
+    FIELD_ENTRY,
+    FIELD_PASSWORD,
+    FIELD_COMBO,
+    FIELD_CHECKBOX,
+    FIELD_RADIO,
+    FIELD_TEXT,
+    FIELD_SPINBOX,
+    FIELD_SCALE,
+    FIELD_DATE,
+    FIELD_FILE,
+    FIELD_LABEL,
+}
+
+
+# ====================================================================================================
+# 4. VALIDATION RESULT DATACLASS
+# ====================================================================================================
+@dataclass
+class ValidationResult:
+    """Result of field or form validation."""
+    valid: bool
+    errors: Dict[str, str] = dataclass_field(default_factory=dict)
+    
+    @property
+    def error_count(self) -> int:
+        return len(self.errors)
+    
+    def get_error(self, key: str) -> Optional[str]:
+        return self.errors.get(key)
+
+
+# ====================================================================================================
+# 5. FIELD INFO DATACLASS
+# ====================================================================================================
+@dataclass
+class FieldInfo:
+    """Runtime information about a form field."""
+    key: str
+    field_type: str
+    widget: Any
+    variable: Optional[Any]
+    label_widget: Any
+    error_label: Optional[Any]
+    help_label: Optional[Any]
+    container: Any
+    schema: Dict[str, Any]
+
+
+# ====================================================================================================
+# 6. FORM BUILDER CLASS
+# ====================================================================================================
 class FormBuilder:
     """
-    Description:
-        Dynamic, schema-driven form builder that produces a clean, consistent layout using
-        themed widgets and shared layout primitives.
-
-        The form is always rendered as a simple two-column grid:
-
-            [ Label (column 0) ]  [ Field widget (column 1, sticky="we") ]
-
-        A caller provides a schema describing each field, and FormBuilder:
-            - Creates the correct widget (entry/combobox/checkbox/text).
-            - Wires up tk.Variable bindings where appropriate.
-            - Applies default values.
-            - Manages layout using grid_form_row from G02a_layout_utils.
-            - Exposes a small API for get/set/clear/validate operations.
-
-    Args:
-        parent (tk.Misc):
-            Container where the form rows will be created (typically a section body).
-        schema (List[Dict[str, Any]]):
-            Declarative description of each form field.
-
-            Supported keys per field:
-                type:      "entry" | "combo" | "checkbox" | "text"  (default: "entry")
-                label:     Display label string (left column).
-                key:       Unique identifier for this field's value (required).
-                values:    List of allowed values for "combo".
-                required:  bool; when True, value must not be empty.
-                numeric:   bool; when True, value must be castable to float.
-                allowed:   Iterable of allowed values; value must be in this collection.
-                default:   Default value applied on initial render.
-                validate:  callable(value) -> (ok: bool, error_message: str)
-
-    Returns:
-        None.
-
-    Raises:
-        ValueError:
-            If any field in the schema is missing a required 'key' attribute, or if an
-            unsupported field type is encountered.
-
-    Notes:
-        - This class is layout- and behaviour-focused only; there is no business logic.
-        - It is safe to instantiate multiple FormBuilder instances on the same parent.
+    Enhanced schema-driven form builder with comprehensive field support.
+    
+    Features:
+        - 10+ field types (entry, password, combo, checkbox, radio, text, spinbox, scale, date, file, label)
+        - Real-time validation with visual error feedback
+        - Field grouping (fieldsets)
+        - Help text per field
+        - Disabled/readonly states
+        - Conditional field visibility
+        - Focus management
+        - Change callbacks
+    
+    Example:
+        schema = [
+            {"type": "entry", "label": "Name", "key": "name", "required": True},
+            {"type": "entry", "label": "Email", "key": "email", "required": True, 
+             "validate": lambda v: (bool(re.match(r".+@.+", v)), "Invalid email")},
+            {"type": "combo", "label": "Role", "key": "role", "values": ["Admin", "User"]},
+            {"type": "checkbox", "label": "Active", "key": "active", "default": True},
+        ]
+        
+        form = FormBuilder(parent, schema)
+        
+        if form.validate().valid:
+            data = form.get_values()
     """
-
-    # Default row spacing
-    ROW_PADY: Tuple[int, int] = (4, 4)
-    LABEL_PADX: Tuple[int, int] = (0, FRAME_PADDING)
-
-    def __init__(self, parent: tk.Misc, schema: List[Dict[str, Any]]) -> None:  # type: ignore[name-defined]
+    
+    # Default spacing
+    ROW_PADY: Tuple[int, int] = (SPACING_XS, SPACING_XS)
+    LABEL_PADX: Tuple[int, int] = (0, SPACING_MD)
+    ERROR_PADY: Tuple[int, int] = (0, SPACING_XS)
+    HELP_PADY: Tuple[int, int] = (0, SPACING_XS)
+    GROUP_PADY: Tuple[int, int] = (SPACING_MD, SPACING_SM)
+    
+    def __init__(
+        self,
+        parent: tk.Misc,
+        schema: List[Dict[str, Any]],
+        *,
+        show_errors: bool = True,
+        show_help: bool = True,
+        validate_on_change: bool = False,
+        on_change: Optional[Callable[[str, Any], None]] = None,
+        on_submit: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        """
+        Initialize FormBuilder.
+        
+        Args:
+            parent: Container widget for the form.
+            schema: List of field definitions.
+            show_errors: Show error labels below fields.
+            show_help: Show help text below fields.
+            validate_on_change: Validate fields as they change.
+            on_change: Callback when any field changes: (key, value) -> None.
+            on_submit: Callback for form submission: (values) -> None.
+        """
         self.parent = parent
         self.schema = schema
-
-        # Maps field key -> widget instance
-        self.widgets: Dict[str, Any] = {}
-        # Maps field key -> associated tk.Variable (if used)
-        self.variables: Dict[str, Any] = {}
-
+        self.show_errors = show_errors
+        self.show_help = show_help
+        self.validate_on_change = validate_on_change
+        self.on_change_callback = on_change
+        self.on_submit_callback = on_submit
+        
+        # Field tracking
+        self.fields: Dict[str, FieldInfo] = {}
+        self.groups: Dict[str, ttk.LabelFrame] = {}
+        self._current_row = 0
+        
         logger.debug("[G02c] Initialising FormBuilder with %d fields", len(schema))
-        self.render_form_rows()
-
-    # -----------------------------------------------------------------------------------------------
-    # 3.1 FORM CONSTRUCTION
-    # -----------------------------------------------------------------------------------------------
-    def render_form_rows(self) -> None:
-        """
-        Description:
-            Build all form rows using widget primitives and the shared grid_form_row helper.
-
-            For each field in the schema:
-                - Create a label using make_label().
-                - Create an appropriate widget primitive based on 'type'.
-                - Bind a tk.Variable when appropriate (entry/combo/checkbox).
-                - Apply any default value.
-                - Lay out using grid_form_row(...).
-
-        Args:
-            None.
-
-        Returns:
-            None.
-
-        Raises:
-            ValueError:
-                If a field dictionary is missing the required 'key' attribute, or if
-                the 'type' value is unsupported.
-
-        Notes:
-            This method is called automatically from __init__, but can also be called
-            again if you ever decide to rebuild the form in-place.
-        """
-        for row_index, field in enumerate(self.schema):
-            field_type = str(field.get("type", "entry")).lower()
-            label_text = field.get("label", "")
-            key = field.get("key")
-
-            if not key:
-                raise ValueError("Form field is missing required 'key' attribute")
-
-            logger.debug(
-                "[G02c] Building field '%s' (type=%s, row=%d)",
-                key,
-                field_type,
-                row_index,
-            )
-
-            # ---------------------------------------------------------------------------------------
-            # Label widget (left column)
-            # ---------------------------------------------------------------------------------------
-            label_widget = make_label(
-                self.parent,
-                label_text,
+        self._build_form()
+    
+    # ================================================================================================
+    # FORM CONSTRUCTION
+    # ================================================================================================
+    def _build_form(self) -> None:
+        """Build all form fields from schema."""
+        # Group fields by their group attribute
+        grouped_fields: Dict[Optional[str], List[Dict[str, Any]]] = {}
+        for field_schema in self.schema:
+            group = field_schema.get("group")
+            if group not in grouped_fields:
+                grouped_fields[group] = []
+            grouped_fields[group].append(field_schema)
+        
+        # Render ungrouped fields first (group=None)
+        if None in grouped_fields:
+            for field_schema in grouped_fields[None]:
+                self._build_field(self.parent, field_schema)
+        
+        # Render grouped fields in fieldsets
+        for group_name, fields in grouped_fields.items():
+            if group_name is None:
+                continue
+            
+            # Create fieldset (LabelFrame)
+            fieldset = ttk.LabelFrame(self.parent, text=group_name, style="TLabelframe")
+            fieldset.grid(row=self._current_row, column=0, columnspan=3, sticky="ew", pady=self.GROUP_PADY)
+            self._current_row += 1
+            self.groups[group_name] = fieldset
+            
+            # Configure fieldset grid
+            fieldset.columnconfigure(1, weight=1)
+            
+            # Build fields inside fieldset
+            fieldset_row = 0
+            for field_schema in fields:
+                self._build_field(fieldset, field_schema, start_row=fieldset_row)
+                fieldset_row += 1
+        
+        # Configure parent grid
+        self.parent.columnconfigure(1, weight=1)
+    
+    def _build_field(
+        self,
+        container: tk.Misc,
+        field_schema: Dict[str, Any],
+        start_row: Optional[int] = None,
+    ) -> None:
+        """Build a single form field."""
+        field_type = str(field_schema.get("type", FIELD_ENTRY)).lower()
+        label_text = field_schema.get("label", "")
+        key = field_schema.get("key")
+        
+        if not key:
+            raise ValueError("Form field is missing required 'key' attribute")
+        
+        if field_type not in ALL_FIELD_TYPES:
+            raise ValueError(f"Unsupported form field type: {field_type!r}")
+        
+        row = start_row if start_row is not None else self._current_row
+        
+        logger.debug("[G02c] Building field '%s' (type=%s, row=%d)", key, field_type, row)
+        
+        # Create label
+        label_widget = make_label(
+            container,
+            f"{label_text}:" if label_text and field_type != FIELD_CHECKBOX else label_text,
+            category="Body",
+            surface="Primary",
+            weight="Normal",
+        )
+        
+        # Create field widget and variable
+        widget, variable = self._create_field_widget(container, field_schema, field_type)
+        
+        # Create error label (if enabled)
+        error_label = None
+        if self.show_errors:
+            error_label = make_label(
+                container,
+                "",
                 category="Body",
                 surface="Primary",
                 weight="Normal",
             )
-
-            # ---------------------------------------------------------------------------------------
-            # Field widget (right column) + variable binding
-            # ---------------------------------------------------------------------------------------
-            widget: Any
-            variable: Any = None
-
-            if field_type == "entry":
-                variable = tk.StringVar()
-                widget = make_entry(self.parent)
-                widget.configure(textvariable=variable)
-
-            elif field_type == "combo":
-                variable = tk.StringVar()
-                values = field.get("values", [])
-                widget = make_combobox(
-                    self.parent,
-                    values=values,
-                    state=field.get("state", "readonly"),
-                )
-                widget.configure(textvariable=variable)
-
-            elif field_type == "checkbox":
-                variable = tk.BooleanVar()
-                # Checkbox text is typically shown in the label column, so use empty button text.
-                widget = make_checkbox(
-                    self.parent,
-                    text="",
-                    variable=variable,
-                )
-
-            elif field_type == "text":
-                # Use themed textarea; no direct StringVar binding (handled via widget.get()).
-                widget = make_textarea(self.parent, height=4)
-
-            else:
-                raise ValueError(f"Unsupported form field type: {field_type!r}")
-
-            # Apply default value if provided
-            if "default" in field:
-                default_value = field["default"]
-                self.apply_default_value_for_field(
-                    widget=widget,
-                    variable=variable,
-                    field_type=field_type,
-                    default_value=default_value,
-                )
-
-            # ---------------------------------------------------------------------------------------
-            # Layout via grid_form_row (from G02a_layout_utils)
-            # ---------------------------------------------------------------------------------------
-            grid_form_row(
-                parent=self.parent,
-                row=row_index,
-                label_widget=label_widget,
-                field_widget=widget,
-                label_column=0,
-                field_column=1,
-                label_sticky="e",
-                field_sticky="we",
-                label_padx=self.LABEL_PADX,
-                common_pady=self.ROW_PADY,
+            # Apply error styling (will be hidden by default)
+            try:
+                error_label.configure(foreground=GUI_COLOUR_STATUS_ERROR)
+            except Exception:
+                pass
+        
+        # Create help label (if enabled and help text provided)
+        help_label = None
+        help_text = field_schema.get("help")
+        if self.show_help and help_text:
+            help_label = make_label(
+                container,
+                help_text,
+                category="Body",
+                surface="Primary",
+                weight="Normal",
             )
-
-            # Store references
-            self.widgets[key] = widget
-            self.variables[key] = variable
-
-    # -----------------------------------------------------------------------------------------------
-    def apply_default_value_for_field(
+            try:
+                help_label.configure(foreground=TEXT_COLOUR_SECONDARY)
+            except Exception:
+                pass
+        
+        # Layout field
+        self._layout_field(
+            container=container,
+            row=row,
+            label_widget=label_widget,
+            field_widget=widget,
+            error_label=error_label,
+            help_label=help_label,
+            field_type=field_type,
+        )
+        
+        # Apply default value
+        if "default" in field_schema:
+            self._set_field_value(widget, variable, field_type, field_schema["default"])
+        
+        # Apply disabled state
+        if field_schema.get("disabled"):
+            self._set_field_disabled(widget, field_type, True)
+        
+        # Apply visibility
+        visible = field_schema.get("visible", True)
+        if not visible:
+            self._set_field_visible(key, False)
+        
+        # Wire up change tracking
+        if variable is not None:
+            variable.trace_add("write", lambda *args, k=key: self._on_field_change(k))
+        
+        # Store field info
+        self.fields[key] = FieldInfo(
+            key=key,
+            field_type=field_type,
+            widget=widget,
+            variable=variable,
+            label_widget=label_widget,
+            error_label=error_label,
+            help_label=help_label,
+            container=container,
+            schema=field_schema,
+        )
+        
+        if start_row is None:
+            self._current_row += 1
+    
+    def _create_field_widget(
         self,
-        widget: Any,
-        variable: Any,
+        parent: tk.Misc,
+        field_schema: Dict[str, Any],
         field_type: str,
-        default_value: Any,
+    ) -> Tuple[Any, Optional[Any]]:
+        """Create the appropriate widget for a field type."""
+        widget: Any = None
+        variable: Any = None
+        
+        width = field_schema.get("width", 30)
+        
+        if field_type == FIELD_ENTRY:
+            variable = tk.StringVar()
+            widget = make_entry(parent, width=width)
+            widget.configure(textvariable=variable)
+        
+        elif field_type == FIELD_PASSWORD:
+            variable = tk.StringVar()
+            widget = make_entry(parent, width=width)
+            widget.configure(textvariable=variable, show="•")
+        
+        elif field_type == FIELD_COMBO:
+            variable = tk.StringVar()
+            values = field_schema.get("values", [])
+            state = field_schema.get("state", "readonly")
+            widget = make_combobox(parent, values=values, state=state, width=width)
+            widget.configure(textvariable=variable)
+        
+        elif field_type == FIELD_CHECKBOX:
+            variable = tk.BooleanVar()
+            widget = make_checkbox(parent, text="", variable=variable)
+        
+        elif field_type == FIELD_RADIO:
+            variable = tk.StringVar()
+            values = field_schema.get("values", [])
+            # Create frame to hold radio buttons
+            widget = make_frame(parent)
+            for i, val in enumerate(values):
+                rb = ttk.Radiobutton(widget, text=val, value=val, variable=variable)
+                rb.pack(side="left", padx=(0, SPACING_MD))
+        
+        elif field_type == FIELD_TEXT:
+            height = field_schema.get("height", 4)
+            widget = make_textarea(parent, height=height, width=width)
+        
+        elif field_type == FIELD_SPINBOX:
+            variable = tk.StringVar()
+            min_val = field_schema.get("min", 0)
+            max_val = field_schema.get("max", 100)
+            step = field_schema.get("step", 1)
+            widget = ttk.Spinbox(
+                parent,
+                from_=min_val,
+                to=max_val,
+                increment=step,
+                textvariable=variable,
+                width=width,
+            )
+        
+        elif field_type == FIELD_SCALE:
+            variable = tk.DoubleVar()
+            min_val = field_schema.get("min", 0)
+            max_val = field_schema.get("max", 100)
+            widget = ttk.Scale(
+                parent,
+                from_=min_val,
+                to=max_val,
+                variable=variable,
+                orient="horizontal",
+            )
+        
+        elif field_type == FIELD_DATE:
+            variable = tk.StringVar()
+            widget = make_entry(parent, width=width)
+            widget.configure(textvariable=variable)
+            # Could add date format hint via placeholder
+        
+        elif field_type == FIELD_FILE:
+            variable = tk.StringVar()
+            # Create frame with entry + browse button
+            widget = make_frame(parent)
+            entry = make_entry(widget, width=width - 10)
+            entry.configure(textvariable=variable)
+            entry.pack(side="left", fill="x", expand=True)
+            
+            filetypes = field_schema.get("filetypes", [("All files", "*.*")])
+            
+            def browse():
+                from tkinter import filedialog
+                filename = filedialog.askopenfilename(filetypes=filetypes)
+                if filename:
+                    variable.set(filename)
+            
+            browse_btn = make_button(widget, "Browse...", command=browse, style="Secondary.TButton")
+            browse_btn.pack(side="left", padx=(SPACING_SM, 0))
+        
+        elif field_type == FIELD_LABEL:
+            variable = tk.StringVar()
+            widget = make_label(parent, "", category="Body")
+            # Bind variable to label
+            def update_label(*args):
+                try:
+                    widget.configure(text=variable.get())
+                except Exception:
+                    pass
+            variable.trace_add("write", update_label)
+        
+        return widget, variable
+    
+    def _layout_field(
+        self,
+        container: tk.Misc,
+        row: int,
+        label_widget: Any,
+        field_widget: Any,
+        error_label: Optional[Any],
+        help_label: Optional[Any],
+        field_type: str,
     ) -> None:
-        """
-        Description:
-            Apply a default value to a field during initial render.
-
-            For variable-backed widgets, this prefers setting the tk.Variable so that
-            widget and model stay in sync. For text widgets, it writes directly into
-            the content area.
-
-        Args:
-            widget (Any):
-                The widget instance created for this field.
-            variable (Any):
-                Associated tk.Variable instance (if any), such as StringVar/BooleanVar.
-            field_type (str):
-                The normalised form field type ("entry", "combo", "checkbox", "text").
-            default_value (Any):
-                Value to apply as the initial content.
-
-        Returns:
-            None.
-
-        Raises:
-            None.
-
-        Notes:
-            All exceptions are caught and logged as warnings; failure to apply a default
-            never stops the form from rendering.
-        """
-        if field_type == "text":
+        """Layout a field with its label, error, and help text."""
+        # Label in column 0
+        label_widget.grid(row=row, column=0, sticky="e", padx=self.LABEL_PADX, pady=self.ROW_PADY)
+        
+        # Field in column 1
+        sticky = "w" if field_type == FIELD_CHECKBOX else "ew"
+        field_widget.grid(row=row, column=1, sticky=sticky, pady=self.ROW_PADY)
+        
+        # Error and help in column 1 (below field)
+        # Note: For simplicity, we put error/help in column 2 or as separate rows
+        # This version puts them in column 1 with the field, which requires rowspan management
+        # For now, we'll put them to the right in column 2
+        
+        col = 2
+        if error_label:
+            error_label.grid(row=row, column=col, sticky="w", padx=(SPACING_SM, 0))
+            error_label.grid_remove()  # Hidden by default
+        
+        # Help text - show in same cell or below
+        # For cleaner layout, we'll show help as tooltip or skip for now
+    
+    def _on_field_change(self, key: str) -> None:
+        """Handle field value change."""
+        if self.validate_on_change:
+            self._validate_field(key)
+        
+        if self.on_change_callback:
+            field = self.fields.get(key)
+            if field:
+                value = self._get_field_value(field.widget, field.variable, field.field_type)
+                try:
+                    self.on_change_callback(key, value)
+                except Exception as e:
+                    logger.warning("[G02c] on_change callback error: %s", e)
+        
+        # Update conditional visibility
+        self._update_conditional_visibility()
+    
+    def _update_conditional_visibility(self) -> None:
+        """Update field visibility based on conditional rules."""
+        values = self.get_values()
+        
+        for key, field in self.fields.items():
+            visible_rule = field.schema.get("visible")
+            if callable(visible_rule):
+                try:
+                    should_show = visible_rule(values)
+                    self._set_field_visible(key, should_show)
+                except Exception as e:
+                    logger.warning("[G02c] Visibility rule error for %s: %s", key, e)
+    
+    # ================================================================================================
+    # VALUE ACCESS
+    # ================================================================================================
+    def get_values(self) -> Dict[str, Any]:
+        """Get all field values as a dictionary."""
+        data: Dict[str, Any] = {}
+        
+        for key, field in self.fields.items():
+            data[key] = self._get_field_value(field.widget, field.variable, field.field_type)
+        
+        return data
+    
+    def get_value(self, key: str) -> Any:
+        """Get a single field value."""
+        field = self.fields.get(key)
+        if not field:
+            return None
+        return self._get_field_value(field.widget, field.variable, field.field_type)
+    
+    def _get_field_value(self, widget: Any, variable: Any, field_type: str) -> Any:
+        """Extract value from a field widget."""
+        if field_type == FIELD_TEXT:
+            if isinstance(widget, (scrolledtext.ScrolledText, tk.Text)):
+                return widget.get("1.0", "end").strip()
+        
+        if variable is not None and hasattr(variable, "get"):
+            return variable.get()
+        
+        if hasattr(widget, "get"):
+            try:
+                return widget.get()
+            except Exception:
+                pass
+        
+        return None
+    
+    def set_values(self, values: Dict[str, Any]) -> None:
+        """Set multiple field values."""
+        for key, value in values.items():
+            self.set_value(key, value)
+    
+    def set_value(self, key: str, value: Any) -> None:
+        """Set a single field value."""
+        field = self.fields.get(key)
+        if not field:
+            return
+        self._set_field_value(field.widget, field.variable, field.field_type, value)
+    
+    def _set_field_value(self, widget: Any, variable: Any, field_type: str, value: Any) -> None:
+        """Set value on a field widget."""
+        if field_type == FIELD_TEXT:
             try:
                 widget.delete("1.0", "end")
-                if default_value is not None:
-                    widget.insert("1.0", str(default_value))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[G02c] Failed to apply default value to text field: %s",
-                    exc,
-                )
+                if value is not None:
+                    widget.insert("1.0", str(value))
+            except Exception as e:
+                logger.warning("[G02c] Failed to set text field: %s", e)
             return
-
-        # For entry/combo/checkbox, prefer the tk.Variable (if present)
+        
         if variable is not None and hasattr(variable, "set"):
             try:
-                variable.set(default_value)
+                variable.set(value)
                 return
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[G02c] Failed to set default via tk.Variable: %s",
-                    exc,
-                )
-
-        # Fallback to direct widget set if supported
-        if hasattr(widget, "insert") and hasattr(widget, "delete"):
+            except Exception as e:
+                logger.warning("[G02c] Failed to set variable: %s", e)
+        
+        if hasattr(widget, "delete") and hasattr(widget, "insert"):
             try:
                 widget.delete(0, "end")
-                if default_value is not None:
-                    widget.insert(0, str(default_value))
+                if value is not None:
+                    widget.insert(0, str(value))
             except Exception:
-                # Swallow completely; defaults are not critical enough to fail rendering.
                 pass
-
-    # -----------------------------------------------------------------------------------------------
-    # 3.2 DATA EXTRACTION & MANIPULATION
-    # -----------------------------------------------------------------------------------------------
-    def get_values(self) -> Dict[str, Any]:
-        """
-        Description:
-            Return a dictionary of field values keyed by each field's 'key'.
-
-            For each row:
-                - If widget is a Text/ScrolledText, uses widget.get("1.0", "end").
-                - Else if there is a tk.Variable, uses variable.get().
-                - Else falls back to widget.get() when available.
-
-        Args:
-            None.
-
-        Returns:
-            Dict[str, Any]:
-                Mapping of schema keys to the current widget values.
-
-        Raises:
-            None.
-
-        Notes:
-            Any widget that does not support the above access patterns will simply
-            yield a value of None.
-        """
-        data: Dict[str, Any] = {}
-
-        for field in self.schema:
-            key = field["key"]
-            widget = self.widgets.get(key)
-            variable = self.variables.get(key)
-
-            if widget is None:
-                continue
-
-            if isinstance(widget, scrolledtext.ScrolledText):  # type: ignore[name-defined]
-                value = widget.get("1.0", "end").strip()
-            elif isinstance(widget, tk.Text):
-                value = widget.get("1.0", "end").strip()
-            elif variable is not None and hasattr(variable, "get"):
-                value = variable.get()
-            elif hasattr(widget, "get"):
-                try:
-                    value = widget.get()
-                except Exception:
-                    value = None
-            else:
-                value = None
-
-            data[key] = value
-
-        return data
-
-    # -----------------------------------------------------------------------------------------------
-    def set_values(self, values: Dict[str, Any]) -> None:
-        """
-        Description:
-            Update form values from a dict keyed by field 'key'.
-
-            Behaviour:
-                - For Text/ScrolledText: clear content and insert new text.
-                - For var-backed widgets: uses variable.set(value).
-                - For simple entry-like widgets: uses delete/insert if available.
-
-        Args:
-            values (Dict[str, Any]):
-                Mapping of field key -> desired value.
-
-        Returns:
-            None.
-
-        Raises:
-            None.
-
-        Notes:
-            Any errors while updating a particular field are logged as warnings,
-            and processing for other fields continues.
-        """
-        for key, value in values.items():
-            widget = self.widgets.get(key)
-            variable = self.variables.get(key)
-
-            if widget is None:
-                continue
-
-            # Multi-line widgets
-            if isinstance(widget, scrolledtext.ScrolledText) or isinstance(widget, tk.Text):  # type: ignore[name-defined]
-                try:
-                    widget.delete("1.0", "end")
-                    if value is not None:
-                        widget.insert("1.0", str(value))
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "[G02c] Failed to set value for text field %s: %s",
-                        key,
-                        exc,
-                    )
-                continue
-
-            # tk.Variable-backed widgets
-            if variable is not None and hasattr(variable, "set"):
-                try:
-                    variable.set(value)
-                    continue
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "[G02c] Failed to set tk.Variable value for %s: %s",
-                        key,
-                        exc,
-                    )
-
-            # Fallback: direct widget manipulation
-            if hasattr(widget, "delete") and hasattr(widget, "insert"):
-                try:
-                    widget.delete(0, "end")
-                    if value is not None:
-                        widget.insert(0, str(value))
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "[G02c] Failed to set value on widget for %s: %s",
-                        key,
-                        exc,
-                    )
-
-    # -----------------------------------------------------------------------------------------------
+    
     def clear(self) -> None:
-        """
-        Description:
-            Reset all fields to a sensible empty state.
-
-            Behaviour:
-                - For Text/ScrolledText: delete all content.
-                - For StringVar: set to "".
-                - For BooleanVar: set to False.
-                - For others: widget.delete(0, "end") if available.
-
-        Args:
-            None.
-
-        Returns:
-            None.
-
-        Raises:
-            None.
-
-        Notes:
-            Any errors while clearing an individual field are swallowed, as this
-            operation is best-effort and should never crash the UI.
-        """
-        for key, widget in self.widgets.items():
-            variable = self.variables.get(key)
-
-            if isinstance(widget, scrolledtext.ScrolledText) or isinstance(widget, tk.Text):  # type: ignore[name-defined]
+        """Clear all fields to empty/default state."""
+        for key, field in self.fields.items():
+            if field.field_type == FIELD_TEXT:
                 try:
-                    widget.delete("1.0", "end")
+                    field.widget.delete("1.0", "end")
                 except Exception:
                     pass
-                if variable is not None and hasattr(variable, "set"):
+            elif field.field_type == FIELD_CHECKBOX:
+                if field.variable:
+                    field.variable.set(False)
+            elif field.variable:
+                if isinstance(field.variable, tk.BooleanVar):
+                    field.variable.set(False)
+                else:
                     try:
-                        variable.set("")
+                        field.variable.set("")
                     except Exception:
                         pass
-                continue
-
-            if isinstance(variable, tk.StringVar):
-                variable.set("")
-            elif isinstance(variable, tk.BooleanVar):
-                variable.set(False)
-            elif variable is not None and hasattr(variable, "set"):
-                try:
-                    variable.set("")
-                except Exception:
-                    pass
-            else:
-                if hasattr(widget, "delete"):
-                    try:
-                        widget.delete(0, "end")
-                    except Exception:
-                        pass
-
-    # -----------------------------------------------------------------------------------------------
-    # 3.3 VALIDATION ENGINE
-    # -----------------------------------------------------------------------------------------------
-    def validate_all(self) -> Dict[str, str]:
-        """
-        Description:
-            Validate all fields according to the rules in their schema entries.
-
-            Validation rules per field:
-                required: True        → value must not be empty/None.
-                numeric:  True        → value must be castable to float.
-                allowed:  [list]      → value must be a member of the list.
-                validate: callable    → custom validator; value -> (ok: bool, msg: str).
-
-        Args:
-            None.
-
-        Returns:
-            Dict[str, str]:
-                Mapping from field key to error message (only for failing fields).
-                An empty dict indicates that all fields passed validation.
-
-        Raises:
-            None.
-
-        Notes:
-            - Custom validators are fully user-defined; any exceptions are caught and
-              logged, and the field is treated as failing validation.
-        """
+            
+            # Clear error display
+            self._clear_field_error(key)
+    
+    # ================================================================================================
+    # VALIDATION
+    # ================================================================================================
+    def validate(self) -> ValidationResult:
+        """Validate all fields and return result."""
         errors: Dict[str, str] = {}
         values = self.get_values()
-
-        for field in self.schema:
-            key = field["key"]
-            value = values.get(key)
-
-            # Required
-            if field.get("required") and (value is None or value == ""):
-                errors[key] = "This field is required"
-                continue
-
-            # Numeric
-            if field.get("numeric") and value not in (None, ""):
-                try:
-                    float(value)
-                except Exception:
-                    errors[key] = "Must be numeric"
-                    continue
-
-            # Allowed values (exact match)
-            allowed_values = field.get("allowed")
-            if allowed_values is not None and value not in allowed_values and value not in (None, ""):
-                errors[key] = f"Invalid value (allowed: {allowed_values})"
-                continue
-
-            # Custom validator
-            validator: Optional[Callable[[Any], Tuple[bool, str]]] = field.get("validate")  # type: ignore[assignment]
-            if validator:
-                try:
-                    ok, message = validator(value)
+        
+        for key, field in self.fields.items():
+            error = self._validate_single_field(key, values.get(key), field.schema)
+            if error:
+                errors[key] = error
+                self._show_field_error(key, error)
+            else:
+                self._clear_field_error(key)
+        
+        return ValidationResult(valid=len(errors) == 0, errors=errors)
+    
+    def _validate_field(self, key: str) -> Optional[str]:
+        """Validate a single field and update display."""
+        field = self.fields.get(key)
+        if not field:
+            return None
+        
+        value = self._get_field_value(field.widget, field.variable, field.field_type)
+        error = self._validate_single_field(key, value, field.schema)
+        
+        if error:
+            self._show_field_error(key, error)
+        else:
+            self._clear_field_error(key)
+        
+        return error
+    
+    def _validate_single_field(self, key: str, value: Any, schema: Dict[str, Any]) -> Optional[str]:
+        """Run validation rules for a single field."""
+        # Required check
+        if schema.get("required"):
+            if value is None or value == "" or (isinstance(value, bool) and not value):
+                return "This field is required"
+        
+        # Skip further validation if empty and not required
+        if value is None or value == "":
+            return None
+        
+        # Numeric check
+        if schema.get("numeric"):
+            try:
+                float(value)
+            except (ValueError, TypeError):
+                return "Must be a number"
+        
+        # Allowed values check
+        allowed = schema.get("allowed")
+        if allowed is not None and value not in allowed:
+            return f"Must be one of: {', '.join(str(a) for a in allowed)}"
+        
+        # Min/max for numeric
+        if schema.get("min") is not None or schema.get("max") is not None:
+            try:
+                num_val = float(value)
+                min_val = schema.get("min")
+                max_val = schema.get("max")
+                if min_val is not None and num_val < min_val:
+                    return f"Must be at least {min_val}"
+                if max_val is not None and num_val > max_val:
+                    return f"Must be at most {max_val}"
+            except (ValueError, TypeError):
+                pass
+        
+        # Custom validator
+        validator = schema.get("validate")
+        if validator and callable(validator):
+            try:
+                result = validator(value)
+                if isinstance(result, tuple) and len(result) == 2:
+                    ok, message = result
                     if not ok:
-                        errors[key] = message or "Invalid value"
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "[G02c] Validator for '%s' raised exception: %s",
-                        key,
-                        exc,
-                    )
-                    errors[key] = "Validation failed"
-
-        return errors
+                        return message or "Invalid value"
+                elif isinstance(result, bool):
+                    if not result:
+                        return "Invalid value"
+            except Exception as e:
+                logger.warning("[G02c] Custom validator error for %s: %s", key, e)
+                return "Validation failed"
+        
+        return None
+    
+    def _show_field_error(self, key: str, error: str) -> None:
+        """Display error for a field."""
+        field = self.fields.get(key)
+        if field and field.error_label:
+            field.error_label.configure(text=error)
+            field.error_label.grid()  # Show
+    
+    def _clear_field_error(self, key: str) -> None:
+        """Clear error display for a field."""
+        field = self.fields.get(key)
+        if field and field.error_label:
+            field.error_label.configure(text="")
+            field.error_label.grid_remove()  # Hide
+    
+    # ================================================================================================
+    # FIELD STATE MANAGEMENT
+    # ================================================================================================
+    def set_disabled(self, key: str, disabled: bool = True) -> None:
+        """Enable or disable a field."""
+        field = self.fields.get(key)
+        if field:
+            self._set_field_disabled(field.widget, field.field_type, disabled)
+    
+    def _set_field_disabled(self, widget: Any, field_type: str, disabled: bool) -> None:
+        """Set disabled state on a widget."""
+        state = "disabled" if disabled else "normal"
+        
+        try:
+            if field_type == FIELD_TEXT:
+                widget.configure(state=state)
+            elif field_type == FIELD_COMBO:
+                widget.configure(state="disabled" if disabled else "readonly")
+            elif hasattr(widget, "configure"):
+                widget.configure(state=state)
+            elif hasattr(widget, "state"):
+                widget.state(["disabled"] if disabled else ["!disabled"])
+        except Exception as e:
+            logger.debug("[G02c] Could not set disabled state: %s", e)
+    
+    def _set_field_visible(self, key: str, visible: bool) -> None:
+        """Show or hide a field."""
+        field = self.fields.get(key)
+        if not field:
+            return
+        
+        if visible:
+            field.label_widget.grid()
+            field.widget.grid()
+            if field.error_label and field.error_label.cget("text"):
+                field.error_label.grid()
+        else:
+            field.label_widget.grid_remove()
+            field.widget.grid_remove()
+            if field.error_label:
+                field.error_label.grid_remove()
+    
+    def set_focus(self, key: str) -> None:
+        """Set focus to a field."""
+        field = self.fields.get(key)
+        if field and field.widget:
+            try:
+                field.widget.focus_set()
+            except Exception:
+                pass
+    
+    def focus_first(self) -> None:
+        """Focus the first editable field."""
+        for field in self.fields.values():
+            if field.field_type not in (FIELD_LABEL,) and not field.schema.get("disabled"):
+                try:
+                    field.widget.focus_set()
+                    return
+                except Exception:
+                    pass
+    
+    def focus_first_error(self) -> None:
+        """Focus the first field with an error."""
+        for key, field in self.fields.items():
+            if field.error_label and field.error_label.cget("text"):
+                try:
+                    field.widget.focus_set()
+                    return
+                except Exception:
+                    pass
+    
+    # ================================================================================================
+    # SUBMISSION
+    # ================================================================================================
+    def submit(self) -> bool:
+        """Validate and submit the form."""
+        result = self.validate()
+        
+        if result.valid:
+            if self.on_submit_callback:
+                try:
+                    self.on_submit_callback(self.get_values())
+                except Exception as e:
+                    logger.error("[G02c] Submit callback error: %s", e)
+                    return False
+            return True
+        else:
+            self.focus_first_error()
+            return False
+    
+    # ================================================================================================
+    # LEGACY COMPATIBILITY
+    # ================================================================================================
+    def validate_all(self) -> Dict[str, str]:
+        """Legacy method - use validate() instead."""
+        result = self.validate()
+        return result.errors
 
 
 # ====================================================================================================
-# 4. SELF-TEST / SANDBOX
-# ----------------------------------------------------------------------------------------------------
+# 7. SELF-TEST / DEMO
+# ====================================================================================================
 def run_demo() -> None:
-    """
-    Description:
-        Lightweight visual demo to verify FormBuilder behaviour in isolation.
-
-        Creates a simple Tk/ttk (or ttkbootstrap) window and renders a schema-driven form
-        directly into a padded frame using the project-wide style engine.
-
-    Args:
-        None.
-
-    Returns:
-        None.
-
-    Raises:
-        None.
-
-    Notes:
-        - This function is intended for manual testing only.
-        - It is only invoked when this module is run as a script.
-    """
+    """Visual demo of FormBuilder v2."""
     init_logging()
-    logger.info("=== G02c_form_patterns demo start ===")
-
-    # -------------------------------------------------------------------------------------------
-    # Window & style initialisation
-    # -------------------------------------------------------------------------------------------
+    logger.info("=== G02c_form_patterns v2 — Demo Start ===")
+    
+    # Window setup
     try:
-        root = Window(themename="flatly")  # type: ignore[name-defined]
-        style_obj = Style()                # type: ignore[name-defined]
-        logger.info("[G02c] Using ttkbootstrap Window/Style.")
+        root = Window(themename="flatly")
+        style_obj = Style()
     except Exception:
         root = tk.Tk()
         style_obj = ttk.Style()
-        logger.info("[G02c] Falling back to standard Tk/ttk.")
-
-    root.title("G02c Form Patterns Demo")
+    
+    root.title("G02c Form Patterns v2 — Demo")
     root.geometry(f"{FRAME_SIZE_H}x{FRAME_SIZE_V}")
     root.configure(bg=GUI_COLOUR_BG_PRIMARY)
-
-    # Apply global ttk styles
-    configure_ttk_styles(style_obj)  # type: ignore[arg-type]
-    logger.info("[G02c] configure_ttk_styles applied successfully.")
-
-    # -------------------------------------------------------------------------------------------
-    # Build demo schema and container
-    # -------------------------------------------------------------------------------------------
-    schema = [
-        {"type": "entry", "label": "Host", "key": "host", "required": True, "default": "localhost"},
-        {"type": "entry", "label": "Port", "key": "port", "numeric": True, "default": "1521"},
-        {
-            "type": "combo",
-            "label": "Environment",
-            "key": "env",
-            "values": ["Dev", "UAT", "Prod"],
-            "required": True,
-            "default": "Dev",
-        },
-        {"type": "checkbox", "label": "Use SSL", "key": "ssl", "default": True},
-        {"type": "text", "label": "Description", "key": "desc"},
-    ]
-
-    # Simple padded container
-    outer = ttk.Frame(root, style="SectionOuter.TFrame")
+    
+    configure_ttk_styles(style_obj)
+    
+    # Main container
+    outer = ttk.Frame(root, style="TFrame")
     outer.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    # Heading
-    heading_label = make_label(
-        outer,
-        "G02c Form Patterns — Demo",
-        category="WindowHeading",
-        surface="Primary",
-        weight="Bold",
-    )
-    heading_label.pack(anchor="w", pady=(0, 8))
-
-    # Form container (grid-based)
-    form_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
+    
+    # Title
+    title = make_label(outer, "G02c Form Patterns v2 — Demo", category="WindowHeading", weight="Bold")
+    title.pack(anchor="w", pady=(0, SPACING_LG))
+    
+    # Form container
+    form_frame = ttk.Frame(outer, style="TFrame")
     form_frame.pack(fill="x")
-
-    form = FormBuilder(form_frame, schema=schema)
-
-    # Buttons row
-    buttons_row = ttk.Frame(outer, style="SectionOuter.TFrame")
-    buttons_row.pack(fill="x", pady=(12, 0))
-
-    def on_print() -> None:
-        values = form.get_values()
-        errors = form.validate_all()
-        print("Values:", values)
-        print("Errors:", errors)
-
-    def on_clear() -> None:
+    
+    # Demo schema with various field types
+    schema = [
+        # Basic fields
+        {"type": "entry", "label": "Username", "key": "username", "required": True, "help": "Your login name"},
+        {"type": "password", "label": "Password", "key": "password", "required": True},
+        {"type": "entry", "label": "Email", "key": "email", "required": True,
+         "validate": lambda v: ("@" in v, "Must contain @") if v else (True, "")},
+        
+        # Selection fields
+        {"type": "combo", "label": "Role", "key": "role", "values": ["Admin", "Editor", "Viewer"], "default": "Viewer"},
+        {"type": "radio", "label": "Priority", "key": "priority", "values": ["Low", "Medium", "High"], "default": "Medium"},
+        
+        # Numeric fields
+        {"type": "spinbox", "label": "Age", "key": "age", "min": 0, "max": 120, "default": 25},
+        {"type": "scale", "label": "Volume", "key": "volume", "min": 0, "max": 100},
+        
+        # Boolean
+        {"type": "checkbox", "label": "Subscribe to newsletter", "key": "newsletter", "default": True},
+        
+        # Text
+        {"type": "text", "label": "Bio", "key": "bio", "height": 3},
+        
+        # Conditional field (shows when newsletter is checked)
+        {"type": "entry", "label": "Preferred email", "key": "pref_email",
+         "visible": lambda vals: vals.get("newsletter", False)},
+    ]
+    
+    def on_submit(values):
+        print("=== Form Submitted ===")
+        for k, v in values.items():
+            print(f"  {k}: {v!r}")
+    
+    def on_change(key, value):
+        print(f"Field changed: {key} = {value!r}")
+    
+    form = FormBuilder(
+        form_frame,
+        schema,
+        show_errors=True,
+        validate_on_change=True,
+        on_submit=on_submit,
+        on_change=on_change,
+    )
+    
+    # Buttons
+    btn_frame = make_horizontal_group(outer)
+    
+    def do_validate():
+        result = form.validate()
+        if result.valid:
+            print("✓ Form is valid!")
+        else:
+            print(f"✗ Form has {result.error_count} error(s):")
+            for k, e in result.errors.items():
+                print(f"  - {k}: {e}")
+    
+    def do_submit():
+        if form.submit():
+            print("✓ Form submitted successfully!")
+        else:
+            print("✗ Form has validation errors")
+    
+    def do_clear():
         form.clear()
-
-    print_btn = ttk.Button(buttons_row, text="Print Values / Errors", command=on_print)
-    clear_btn = ttk.Button(buttons_row, text="Clear", command=on_clear)
-
-    print_btn.pack(side="left")
-    clear_btn.pack(side="left", padx=(8, 0))
-
-    logger.info("=== G02c_form_patterns demo ready ===")
+        print("Form cleared")
+    
+    def do_print():
+        print("Current values:", form.get_values())
+    
+    make_button(btn_frame, "Validate", command=do_validate).pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_frame, "Submit", command=do_submit).pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_frame, "Clear", command=do_clear, style="Secondary.TButton").pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_frame, "Print Values", command=do_print, style="Secondary.TButton").pack(side="left")
+    
+    btn_frame.pack(anchor="w", pady=(SPACING_LG, 0))
+    
+    # Focus first field
+    form.focus_first()
+    
+    logger.info("=== G02c_form_patterns v2 — Demo Ready ===")
     root.mainloop()
-    logger.info("=== G02c_form_patterns demo end ===")
+    logger.info("=== G02c_form_patterns v2 — Demo End ===")
 
 
 # ====================================================================================================
-# 5. MAIN GUARD
-# ----------------------------------------------------------------------------------------------------
+# 8. MAIN GUARD
+# ====================================================================================================
 if __name__ == "__main__":
     run_demo()

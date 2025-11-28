@@ -2,26 +2,27 @@
 # G02d_debug_utils.py
 # ----------------------------------------------------------------------------------------------------
 # Purpose:
-#   Developer Debug Console for GUI Boilerplate (G00 + G01x + G02x)
+#   Comprehensive Developer Debug Console for GUI Boilerplate
 #
-#   Provides a single entry point to visually and programmatically verify:
-#       • G01a_style_config       (design tokens)
-#       • G01b_style_engine       (ttk style definitions)
-#       • G01c_widget_primitives  (widget factories)
-#       • G01d_layout_primitives  (layout wrappers)
-#       • G02a_layout_utils       (grid/pack helpers)
-#       • G02b_container_patterns (sections/cards)
-#       • G02c_form_patterns      (schema-driven forms)
+#   Provides extensive tools for visual and programmatic debugging:
 #
-#   The console opens a Tk/ttk (or ttkbootstrap) window with a ttk.Notebook containing tabs:
-#       1. Imports & Styles
-#       2. Widget Primitives
-#       3. Layout Helpers
-#       4. Container Patterns
-#       5. Form Patterns
+#   TABS:
+#       1. System Info      - Python, Tk, ttkbootstrap versions, memory
+#       2. Import Status    - Module import diagnostics with timing
+#       3. Style Explorer   - Browse all ttk styles, fonts, colours
+#       4. Widget Gallery   - Interactive widget demos
+#       5. Widget Inspector - Select and inspect any widget
+#       6. Colour Palette   - Visual display of all design tokens
+#       7. Performance      - Timing metrics for common operations
+#       8. Log Viewer       - Real-time log output in GUI
 #
-#   All tests are run automatically on startup (no buttons required). Each tab exercises the
-#   relevant module(s) using the same style + layout system as production GUIs.
+#   FEATURES:
+#       • Real-time widget inspection
+#       • Style and font browser
+#       • Colour swatch display
+#       • Performance benchmarking
+#       • Export diagnostics to file
+#       • Interactive testing tools
 #
 # Usage:
 #   python gui/G02d_debug_utils.py
@@ -29,58 +30,45 @@
 # ----------------------------------------------------------------------------------------------------
 # Author:       Gerry Pidgeon
 # Created:      2025-11-23
+# Updated:      2025-11-28 (v2 - Comprehensive debug system)
 # Project:      Core Boilerplate v1.0
 # ====================================================================================================
 
 
 # ====================================================================================================
 # 1. SYSTEM IMPORTS
-# ----------------------------------------------------------------------------------------------------
-# These imports (sys, pathlib.Path) are required to correctly initialise the project environment,
-# ensure the core library can be imported safely (including C00_set_packages.py),
-# and prevent project-local paths from overriding installed site-packages.
-# ----------------------------------------------------------------------------------------------------
+# ====================================================================================================
+from __future__ import annotations
 
-# --- Future behaviour & type system enhancements -----------------------------------------------------
-from __future__ import annotations           # Future-proof type hinting (PEP 563 / PEP 649)
+import sys
+import time
+import platform
+import logging
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Callable
+from io import StringIO
 
-# --- Required for dynamic path handling and safe importing of core modules ---------------------------
-import sys                                   # Python interpreter access (path, environment, runtime)
-from pathlib import Path                     # Modern, object-oriented filesystem path handling
-
-# --- Ensure project root DOES NOT override site-packages --------------------------------------------
 project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# --- Remove '' (current working directory) which can shadow installed packages -----------------------
 if "" in sys.path:
     sys.path.remove("")
 
-# --- Prevent creation of __pycache__ folders ---------------------------------------------------------
 sys.dont_write_bytecode = True
 
 
 # ====================================================================================================
 # 2. PROJECT IMPORTS
-# ----------------------------------------------------------------------------------------------------
-# Bring in shared external packages from the central import hub.
-#
-# CRITICAL ARCHITECTURE RULE:
-#   ALL external + stdlib packages MUST be imported exclusively via:
-#       from core.C00_set_packages import *
-#   No other script may import external libraries directly.
-#
-# C01_set_file_paths is a pure core module and must not import GUI packages.
-# ----------------------------------------------------------------------------------------------------
+# ====================================================================================================
 from core.C00_set_packages import *
 
-# --- Initialise module-level logger -----------------------------------------------------------------
-from core.C03_logging_handler import get_logger, log_exception, init_logging
+from core.C03_logging_handler import get_logger, init_logging
 logger = get_logger(__name__)
 
-# --- Additional project-level imports (append below this line only) ----------------------------------
-from gui.G01a_style_config import *  # FRAME_SIZE_H, FRAME_SIZE_V, FRAME_PADDING, GUI_COLOUR_BG_PRIMARY, etc.
+from gui.G00a_gui_packages import tk, ttk, tkFont, scrolledtext, Window, Style, tb
+from gui.G01a_style_config import *
 from gui.G01b_style_engine import (
     configure_ttk_styles,
     FONT_NAME_BASE,
@@ -98,572 +86,653 @@ from gui.G01c_widget_primitives import (
     make_switch,
     make_divider,
     make_spacer,
+    make_frame,
+    make_button_bar,
+    make_horizontal_group,
+    make_vertical_group,
 )
-from gui.G01d_layout_primitives import *  # imported for coverage; typically attaches to UIComponents
 from gui.G02a_layout_utils import (
     safe_grid,
     safe_pack,
     ensure_row_weights,
     ensure_column_weights,
     grid_form_row,
+    SPACING_XS,
+    SPACING_SM,
+    SPACING_MD,
+    SPACING_LG,
+    SPACING_XL,
 )
-from gui.G02b_container_patterns import (
-    create_section_grid,
-    create_card_grid,
-    create_two_column_body,
-)
-from gui.G02c_form_patterns import FormBuilder
-
-# Prefer ttkbootstrap's ttk-compatible widgets when available, otherwise fall back to standard ttk.
-try:
-    bttk = tb  # type: ignore[name-defined]
-except Exception:
-    bttk = ttk  # type: ignore[assignment]
 
 
 # ====================================================================================================
-# 3. IMPORT & STYLE DIAGNOSTICS
-# ----------------------------------------------------------------------------------------------------
-def gather_import_diagnostics() -> List[Tuple[str, str]]:
-    """
-    Attempt to import all key GUI modules again (safe even if already imported)
-    and return a list of (module_label, status_text).
-    """
-    checks: List[Tuple[str, str]] = []
-    modules = [
-        ("gui.G01a_style_config", "G01a_style_config"),
-        ("gui.G01b_style_engine", "G01b_style_engine"),
-        ("gui.G01c_widget_primitives", "G01c_widget_primitives"),
-        ("gui.G01d_layout_primitives", "G01d_layout_primitives"),
-        ("gui.G02a_layout_utils", "G02a_layout_utils"),
-        ("gui.G02b_container_patterns", "G02b_container_patterns"),
-        ("gui.G02c_form_patterns", "G02c_form_patterns"),
-    ]
-
-    for import_path, label in modules:
-        try:
-            __import__(import_path, fromlist=["*"])
-            checks.append((label, "OK"))
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("[G02d] Import failed for %s: %s", import_path, exc)
-            checks.append((label, f"FAIL – {exc}"))
-
-    return checks
+# 3. TIMING UTILITIES
+# ====================================================================================================
+@dataclass
+class TimingResult:
+    """Result of a timed operation."""
+    name: str
+    duration_ms: float
+    success: bool
+    error: Optional[str] = None
 
 
-def gather_style_diagnostics(style_obj: ttk.Style) -> Dict[str, Any]:
-    """
-    Collect simple diagnostics about the active ttk/ttkbootstrap Style instance.
-    """
-    diag: Dict[str, Any] = {}
+class Timer:
+    """Context manager for timing operations."""
+    
+    def __init__(self, name: str = "operation"):
+        self.name = name
+        self.start_time: float = 0
+        self.end_time: float = 0
+    
+    def __enter__(self) -> "Timer":
+        self.start_time = time.perf_counter()
+        return self
+    
+    def __exit__(self, *args: Any) -> None:
+        self.end_time = time.perf_counter()
+    
+    @property
+    def elapsed_ms(self) -> float:
+        return (self.end_time - self.start_time) * 1000
 
-    # Theme info
+
+def time_operation(name: str, func: Callable[[], Any]) -> TimingResult:
+    """Time a function and return result."""
     try:
-        diag["theme"] = style_obj.theme_use()
+        with Timer(name) as t:
+            func()
+        return TimingResult(name=name, duration_ms=t.elapsed_ms, success=True)
+    except Exception as e:
+        return TimingResult(name=name, duration_ms=0, success=False, error=str(e))
+
+
+# ====================================================================================================
+# 4. DIAGNOSTIC COLLECTORS
+# ====================================================================================================
+def get_system_info() -> Dict[str, str]:
+    """Collect system information."""
+    info = {
+        "Python Version": platform.python_version(),
+        "Platform": platform.platform(),
+        "Architecture": platform.machine(),
+        "Tk Version": "Unknown",
+        "Tcl Version": "Unknown",
+        "ttkbootstrap": "Not available",
+    }
+    
+    try:
+        # Need a Tk instance to get versions
+        temp = tk.Tk()
+        temp.withdraw()
+        info["Tk Version"] = str(temp.tk.call("info", "patchlevel"))
+        info["Tcl Version"] = str(temp.tk.call("info", "patchlevel"))
+        temp.destroy()
     except Exception:
-        diag["theme"] = "(unavailable)"
-
-    # Named fonts (from G01a_style_engine)
-    def _font_exists(name: str | None) -> bool:
-        if not name:
-            return False
-        try:
-            tkFont.nametofont(name)
-            return True
-        except Exception:
-            return False
-
-    diag["FONT_NAME_BASE_exists"] = _font_exists(FONT_NAME_BASE)
-    diag["FONT_NAME_HEADING_exists"] = _font_exists(FONT_NAME_HEADING)
-    diag["FONT_NAME_SECTION_HEADING_exists"] = _font_exists(FONT_NAME_SECTION_HEADING)
-
-    # Key styles – presence check only (no assertion)
-    style_names = [
-        "TLabel",
-        "TButton",
-        "Primary.SectionHeading.Bold.TLabel",
-        "Primary.Normal.TLabel",
-        "Secondary.Normal.TLabel",
-        "SectionOuter.TFrame",
-        "SectionBody.TFrame",
-        "ToolbarDivider.TFrame",
-        "Vertical.TScrollbar",
-    ]
-
-    present: Dict[str, bool] = {}
-    for name in style_names:
-        try:
-            _ = style_obj.lookup(name, "font")
-            present[name] = True
-        except Exception:
-            present[name] = False
-    diag["styles_present"] = present
-
-    return diag
-
-
-# ====================================================================================================
-# 4. TAB BUILDERS
-# ----------------------------------------------------------------------------------------------------
-def build_tab_imports_and_styles(parent: tk.Misc, style_obj: ttk.Style) -> None:  # type: ignore[name-defined]
-    """Build the 'Imports & Styles' tab content."""
-    container = ttk.Frame(parent, style="SectionOuter.TFrame")
-    container.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    make_label(
-        container,
-        "G01x + G02x Imports & Styles",
-        category="WindowHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 8))
-    make_label(
-        container,
-        "Overview of module import status and key style / font diagnostics.",
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 12))
-
-    # Import results
-    import_results = gather_import_diagnostics()
-
-    imports_frame = ttk.Frame(container, style="SectionOuter.TFrame")
-    imports_frame.pack(fill="x", pady=(0, 12))
-
-    make_label(
-        imports_frame,
-        "Module Import Status",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 4))
-
-    for label, status in import_results:
-        text = f"{label:<30} : {status}"
-        if status == "OK":
-            make_label(imports_frame, text, category="Success", surface="Primary", weight="Normal").pack(anchor="w")
-        else:
-            make_label(imports_frame, text, category="Error", surface="Primary", weight="Normal").pack(anchor="w")
-
-    make_divider(container).pack(fill="x", pady=(8, 12))
-
-    # Style diagnostics
-    style_diag = gather_style_diagnostics(style_obj)
-
-    style_frame = ttk.Frame(container, style="SectionOuter.TFrame")
-    style_frame.pack(fill="both", expand=True)
-
-    make_label(
-        style_frame,
-        "Style Engine Diagnostics",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 4))
-
-    make_label(
-        style_frame,
-        f"Active theme: {style_diag.get('theme')}",
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 4))
-
-    font_info = (
-        f"Named fonts: BASE={FONT_NAME_BASE!r} "
-        f"(exists={style_diag['FONT_NAME_BASE_exists']}), "
-        f"HEADING={FONT_NAME_HEADING!r} "
-        f"(exists={style_diag['FONT_NAME_HEADING_exists']}), "
-        f"SECTION={FONT_NAME_SECTION_HEADING!r} "
-        f"(exists={style_diag['FONT_NAME_SECTION_HEADING_exists']})"
-    )
-    make_label(
-        style_frame,
-        font_info,
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 8))
-
-    make_label(
-        style_frame,
-        "Key Style Presence",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(4, 4))
-    for style_name, present in style_diag["styles_present"].items():
-        if present:
-            make_label(
-                style_frame,
-                f"{style_name:<40} : present",
-                category="Success",
-                surface="Primary",
-                weight="Normal",
-            ).pack(anchor="w")
-        else:
-            make_label(
-                style_frame,
-                f"{style_name:<40} : missing",
-                category="Warning",
-                surface="Primary",
-                weight="Normal",
-            ).pack(anchor="w")
-
-
-def build_tab_widget_primitives(parent: tk.Misc) -> None:  # type: ignore[name-defined]
-    """Build the 'Widget Primitives' tab content."""
-    outer = ttk.Frame(parent, style="SectionOuter.TFrame")
-    outer.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    make_label(
-        outer,
-        "G01c Widget Primitives",
-        category="WindowHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 8))
-    make_label(
-        outer,
-        "Core text, input, and choice widgets constructed via make_* helpers.",
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 12))
-
-    # Textual widgets
-    text_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
-    text_frame.pack(fill="x", pady=(0, 10))
-
-    make_label(
-        text_frame,
-        "Textual Widgets",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 4))
-    make_label(text_frame, "Standard label text.", category="Body", surface="Primary", weight="Normal").pack(anchor="w", pady=2)
-    make_label(text_frame, "Success status", category="Success", surface="Primary", weight="Normal").pack(anchor="w", pady=1)
-    make_label(text_frame, "Warning status", category="Warning", surface="Primary", weight="Normal").pack(anchor="w", pady=1)
-    make_label(text_frame, "Error status", category="Error", surface="Primary", weight="Normal").pack(anchor="w", pady=1)
-
-    make_divider(outer).pack(fill="x", pady=(8, 8))
-
-    # Inputs
-    input_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
-    input_frame.pack(fill="x", pady=(0, 10))
-
-    make_label(
-        input_frame,
-        "Input Widgets",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 4))
-
-    make_label(input_frame, "Entry:", category="Body", surface="Primary", weight="Normal").pack(anchor="w")
-    make_entry(input_frame, width=30).pack(anchor="w", pady=(0, 6))
-
-    make_label(input_frame, "Combobox:", category="Body", surface="Primary", weight="Normal").pack(anchor="w")
-    make_combobox(
-        input_frame,
-        values=["Option A", "Option B", "Option C"],
-        state="readonly",
-        width=28,
-    ).pack(anchor="w", pady=(0, 6))
-
-    make_label(input_frame, "Textarea:", category="Body", surface="Primary", weight="Normal").pack(anchor="w")
-    make_textarea(input_frame, height=4).pack(fill="both", expand=True, pady=(0, 6))
-
-    make_divider(outer).pack(fill="x", pady=(8, 8))
-
-    # Choice widgets
-    choice_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
-    choice_frame.pack(fill="x", pady=(0, 10))
-
-    make_label(
-        choice_frame,
-        "Choice Widgets",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 4))
-
-    chk_var = tk.BooleanVar(value=True)
-    make_checkbox(choice_frame, "Enable feature X", variable=chk_var).pack(anchor="w", pady=2)
-
-    radio_var = tk.StringVar(value="A")
-    make_radio(choice_frame, "Radio A", variable=radio_var, value="A").pack(anchor="w")
-    make_radio(choice_frame, "Radio B", variable=radio_var, value="B").pack(anchor="w")
-
-    switch_var = tk.BooleanVar(value=False)
-    make_switch(choice_frame, "Use experimental mode", variable=switch_var).pack(anchor="w", pady=(6, 0))
-
-    make_divider(outer).pack(fill="x", pady=(8, 8))
-
-    # Structural widgets
-    struct_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
-    struct_frame.pack(fill="x")
-
-    make_label(
-        struct_frame,
-        "Structural Helpers",
-        category="SectionHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 4))
-    make_label(struct_frame, "Divider below:", category="Body", surface="Primary", weight="Normal").pack(anchor="w")
-    make_divider(struct_frame).pack(fill="x", pady=(4, 4))
-    make_label(struct_frame, "Spacer below (16px):", category="Body", surface="Primary", weight="Normal").pack(anchor="w")
-    make_spacer(struct_frame, height=16).pack(fill="x")
-
-
-def build_tab_layout_helpers(parent: tk.Misc) -> None:  # type: ignore[name-defined]
-    """Build the 'Layout Helpers' tab content (G02a)."""
-    outer = ttk.Frame(parent, style="SectionOuter.TFrame")
-    outer.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    make_label(
-        outer,
-        "G02a Layout Helpers",
-        category="WindowHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 8))
-    make_label(
-        outer,
-        "Demonstrates safe_grid, safe_pack, ensure_row_weights / ensure_column_weights, "
-        "and grid_form_row.",
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 12))
-
-    frame = ttk.Frame(outer, style="SectionOuter.TFrame")
-    frame.pack(fill="x")
-
-    # Configure column weights using helpers
-    ensure_column_weights(frame, [0, 1], weights=[0, 1])
-
-    # Row 0: Name
-    lbl_name = make_label(frame, "Name:", category="Body", surface="Primary", weight="Normal")
-    ent_name = make_entry(frame, width=30)
-    grid_form_row(
-        frame,
-        row=0,
-        label_widget=lbl_name,
-        field_widget=ent_name,
-    )
-
-    # Row 1: Category
-    lbl_cat = make_label(frame, "Category:", category="Body", surface="Primary", weight="Normal")
-    cmb_cat = make_combobox(
-        frame,
-        values=["A", "B", "C"],
-        state="readonly",
-        width=28,
-    )
-    grid_form_row(
-        frame,
-        row=1,
-        label_widget=lbl_cat,
-        field_widget=cmb_cat,
-    )
-
-    # Demonstrate safe_pack for a bottom status label
-    status = make_label(
-        outer,
-        "This status label was positioned with safe_pack.",
-        category="Success",
-        surface="Primary",
-        weight="Normal",
-    )
-    safe_pack(status, anchor="w", pady=(12, 0))
-
-
-def build_tab_container_patterns(parent: tk.Misc) -> None:  # type: ignore[name-defined]
-    """Build the 'Container Patterns' tab content (G02b)."""
-    outer = ttk.Frame(parent, style="SectionOuter.TFrame")
-    outer.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    make_label(
-        outer,
-        "G02b Container Patterns",
-        category="WindowHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 8))
-    make_label(
-        outer,
-        "Standardised sections and cards created with create_section_grid() "
-        "and create_card_grid().",
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 12))
-
-    # Use a dedicated body frame for all grid-managed content to avoid mixing
-    # pack and grid on the same parent.
-    body = ttk.Frame(outer, style="SectionOuter.TFrame")
-    body.pack(fill="both", expand=True)
-
-    # Main section
-    section = create_section_grid(
-        parent=body,
-        row=0,
-        column=0,
-        columnspan=2,
-        title="Primary Section (Two-Column Body)",
-    )
-
-    left, right = create_two_column_body(section)
-
-    make_label(left, "Left column label 1", category="Body", surface="Secondary", weight="Normal").grid(row=0, column=0, sticky="w", pady=2)
-    make_label(left, "Left column label 2", category="Body", surface="Secondary", weight="Normal").grid(row=1, column=0, sticky="w", pady=2)
-    make_label(right, "Right column label 1", category="Body", surface="Secondary", weight="Normal").grid(row=0, column=0, sticky="w", pady=2)
-    make_label(right, "Right column label 2", category="Body", surface="Secondary", weight="Normal").grid(row=1, column=0, sticky="w", pady=2)
-
-    # Cards under the section
-    card_row = 2
-    card_a = create_card_grid(
-        parent=body,
-        row=card_row,
-        column=0,
-        title="Card A",
-    )
-    card_b = create_card_grid(
-        parent=body,
-        row=card_row,
-        column=1,
-        title="Card B",
-    )
-
-    make_label(card_a.body, "Card A body content.", category="Body", surface="Secondary", weight="Normal").grid(row=0, column=0, sticky="w", pady=2)
-    make_label(card_b.body, "Card B body content.", category="Body", surface="Secondary", weight="Normal").grid(row=0, column=0, sticky="w", pady=2)
-
-    # Ensure the grid in the body frame stretches
-    body.columnconfigure(0, weight=1)
-    body.columnconfigure(1, weight=1)
-
-
-def build_tab_form_patterns(parent: tk.Misc) -> None:  # type: ignore[name-defined]
-    """Build the 'Form Patterns' tab content (G02c)."""
-    outer = ttk.Frame(parent, style="SectionOuter.TFrame")
-    outer.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    make_label(
-        outer,
-        "G02c Form Patterns",
-        category="WindowHeading",
-        surface="Primary",
-        weight="Bold",
-    ).pack(anchor="w", pady=(0, 8))
-    make_label(
-        outer,
-        "Schema-driven forms using FormBuilder, with validation and value model.",
-        category="Body",
-        surface="Primary",
-        weight="Normal",
-    ).pack(anchor="w", pady=(0, 12))
-
-    form_frame = ttk.Frame(outer, style="SectionOuter.TFrame")
-    form_frame.pack(fill="x")
-
-    schema = [
-        {"type": "entry", "label": "Host", "key": "host", "required": True, "default": "localhost"},
-        {"type": "entry", "label": "Port", "key": "port", "numeric": True, "default": "1521"},
-        {
-            "type": "combo",
-            "label": "Environment",
-            "key": "env",
-            "values": ["Dev", "UAT", "Prod"],
-            "required": True,
-            "default": "Dev",
-        },
-        {"type": "checkbox", "label": "Use SSL", "key": "ssl", "default": True},
-        {"type": "text", "label": "Description", "key": "desc"},
-    ]
-
-    form = FormBuilder(form_frame, schema=schema)
-
-    # Buttons row
-    buttons = ttk.Frame(outer, style="SectionOuter.TFrame")
-    buttons.pack(fill="x", pady=(12, 0))
-
-    def on_print() -> None:
-        values = form.get_values()
-        errors = form.validate_all()
-        logger.info("[G02d] Form values: %s", values)
-        logger.info("[G02d] Form errors: %s", errors)
-
-    def on_clear() -> None:
-        form.clear()
-
-    ttk.Button(buttons, text="Print Values / Errors (to log)", command=on_print).pack(side="left")
-    ttk.Button(buttons, text="Clear", command=on_clear).pack(side="left", padx=(8, 0))
-
-
-# ====================================================================================================
-# 5. MAIN DEBUG CONSOLE
-# ----------------------------------------------------------------------------------------------------
-def run_debug_console() -> None:
-    """Entry point: build and run the G01x + G02x debug console."""
-    init_logging()
-    logger.info("=== G02d_debug_utils – Debug Console Start ===")
-
-    # -----------------------------------------------------------------------------------------------
-    # Window & style initialisation
-    # -----------------------------------------------------------------------------------------------
+        pass
+    
     try:
-        root = Window(themename="flatly")  # type: ignore[name-defined]
-        style_obj = Style()                # type: ignore[name-defined]
-        logger.info("[G02d] Using ttkbootstrap Window/Style.")
+        if tb is not None:
+            info["ttkbootstrap"] = getattr(tb, "__version__", "Available (version unknown)")
+    except Exception:
+        pass
+    
+    return info
+
+
+def get_import_diagnostics() -> List[Tuple[str, str, float]]:
+    """Check module imports and return (name, status, time_ms)."""
+    modules = [
+        "gui.G00a_gui_packages",
+        "gui.G01a_style_config",
+        "gui.G01b_style_engine",
+        "gui.G01c_widget_primitives",
+        "gui.G01d_layout_primitives",
+        "gui.G02a_layout_utils",
+        "gui.G02b_container_patterns",
+        "gui.G02c_form_patterns",
+    ]
+    
+    results: List[Tuple[str, str, float]] = []
+    
+    for module in modules:
+        start = time.perf_counter()
+        try:
+            __import__(module, fromlist=["*"])
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append((module.split(".")[-1], "OK", elapsed))
+        except Exception as e:
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append((module.split(".")[-1], f"FAIL: {e}", elapsed))
+    
+    return results
+
+
+def get_style_info(style_obj: ttk.Style) -> Dict[str, Any]:
+    """Collect style engine information."""
+    info: Dict[str, Any] = {
+        "theme": "Unknown",
+        "available_themes": [],
+        "fonts": {},
+        "key_styles": {},
+    }
+    
+    try:
+        info["theme"] = style_obj.theme_use()
+        info["available_themes"] = list(style_obj.theme_names())
+    except Exception:
+        pass
+    
+    # Check named fonts
+    font_names = [FONT_NAME_BASE, FONT_NAME_HEADING, FONT_NAME_SECTION_HEADING]
+    for name in font_names:
+        if name:
+            try:
+                font = tkFont.nametofont(name)
+                info["fonts"][name] = font.actual()
+            except Exception:
+                info["fonts"][name] = None
+    
+    # Check key styles
+    key_styles = [
+        "TLabel", "TButton", "TEntry", "TFrame",
+        "Primary.TButton", "Secondary.TButton",
+        "Primary.Normal.TLabel", "Secondary.Normal.TLabel",
+        "Primary.Heading.Bold.TLabel", "Primary.SectionHeading.Bold.TLabel",
+        "SectionOuter.TFrame", "SectionBody.TFrame", "Card.TFrame",
+    ]
+    
+    for style_name in key_styles:
+        try:
+            # Try to get any property to verify existence
+            style_obj.lookup(style_name, "font")
+            info["key_styles"][style_name] = True
+        except Exception:
+            info["key_styles"][style_name] = False
+    
+    return info
+
+
+def get_colour_palette() -> Dict[str, str]:
+    """Get all colour tokens from G01a."""
+    colours = {}
+    
+    # Background colours
+    colours["GUI_COLOUR_BG_PRIMARY"] = GUI_COLOUR_BG_PRIMARY
+    colours["GUI_COLOUR_BG_SECONDARY"] = GUI_COLOUR_BG_SECONDARY
+    colours["GUI_COLOUR_BG_TEXTAREA"] = GUI_COLOUR_BG_TEXTAREA
+    
+    # Text colours
+    colours["TEXT_COLOUR_PRIMARY"] = TEXT_COLOUR_PRIMARY
+    colours["TEXT_COLOUR_SECONDARY"] = TEXT_COLOUR_SECONDARY
+    colours["TEXT_COLOUR_DISABLED"] = TEXT_COLOUR_DISABLED
+    
+    # Status colours
+    colours["GUI_COLOUR_STATUS_SUCCESS"] = GUI_COLOUR_STATUS_SUCCESS
+    colours["GUI_COLOUR_STATUS_WARNING"] = GUI_COLOUR_STATUS_WARNING
+    colours["GUI_COLOUR_STATUS_ERROR"] = GUI_COLOUR_STATUS_ERROR
+    
+    # Button colours
+    colours["BUTTON_PRIMARY_BG"] = BUTTON_PRIMARY_BG
+    colours["BUTTON_SECONDARY_BG"] = BUTTON_SECONDARY_BG
+    
+    # Accent/divider
+    colours["GUI_COLOUR_DIVIDER"] = GUI_COLOUR_DIVIDER
+    colours["GUI_COLOUR_ACCENT"] = GUI_COLOUR_ACCENT
+    
+    return colours
+
+
+def count_widgets(root: tk.Misc) -> Dict[str, int]:
+    """Count widgets by type in the hierarchy."""
+    counts: Dict[str, int] = {}
+    
+    def count_recursive(widget: tk.Misc) -> None:
+        widget_type = type(widget).__name__
+        counts[widget_type] = counts.get(widget_type, 0) + 1
+        
+        try:
+            for child in widget.winfo_children():
+                count_recursive(child)
+        except Exception:
+            pass
+    
+    count_recursive(root)
+    return counts
+
+
+# ====================================================================================================
+# 5. LOG HANDLER FOR GUI
+# ====================================================================================================
+class TextHandler(logging.Handler):
+    """Logging handler that writes to a Text widget."""
+    
+    def __init__(self, text_widget: tk.Text):
+        super().__init__()
+        self.text_widget = text_widget
+        self.setFormatter(logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%H:%M:%S"
+        ))
+    
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            self.text_widget.configure(state="normal")
+            self.text_widget.insert("end", msg + "\n")
+            self.text_widget.see("end")
+            self.text_widget.configure(state="disabled")
+        except Exception:
+            pass
+
+
+# ====================================================================================================
+# 6. TAB BUILDERS
+# ====================================================================================================
+def build_tab_system_info(parent: tk.Misc) -> None:
+    """Build the System Info tab."""
+    container = ttk.Frame(parent, style="TFrame")
+    container.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(container, "System Information", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    info = get_system_info()
+    
+    info_frame = make_frame(container)
+    info_frame.pack(fill="x", pady=(0, SPACING_LG))
+    
+    for i, (key, value) in enumerate(info.items()):
+        make_label(info_frame, f"{key}:", category="Body", weight="Bold").grid(row=i, column=0, sticky="e", padx=(0, SPACING_MD), pady=SPACING_XS)
+        make_label(info_frame, str(value), category="Body").grid(row=i, column=1, sticky="w", pady=SPACING_XS)
+    
+    make_divider(container).pack(fill="x", pady=SPACING_MD)
+    
+    # Widget count (will update after window is shown)
+    make_label(container, "Widget Statistics", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_SM))
+    
+    stats_label = make_label(container, "Loading...", category="Body")
+    stats_label.pack(anchor="w")
+    
+    def update_stats():
+        try:
+            root = container.winfo_toplevel()
+            counts = count_widgets(root)
+            total = sum(counts.values())
+            text = f"Total widgets: {total}\n"
+            for wtype, count in sorted(counts.items(), key=lambda x: -x[1])[:10]:
+                text += f"  {wtype}: {count}\n"
+            stats_label.configure(text=text)
+        except Exception as e:
+            stats_label.configure(text=f"Error: {e}")
+    
+    container.after(500, update_stats)
+
+
+def build_tab_imports(parent: tk.Misc) -> None:
+    """Build the Import Status tab."""
+    container = ttk.Frame(parent, style="TFrame")
+    container.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(container, "Module Import Diagnostics", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    results = get_import_diagnostics()
+    
+    # Header
+    header = make_frame(container)
+    header.pack(fill="x")
+    make_label(header, "Module", category="Body", weight="Bold").grid(row=0, column=0, sticky="w", padx=(0, SPACING_LG))
+    make_label(header, "Status", category="Body", weight="Bold").grid(row=0, column=1, sticky="w", padx=(0, SPACING_LG))
+    make_label(header, "Time (ms)", category="Body", weight="Bold").grid(row=0, column=2, sticky="e")
+    
+    make_divider(container).pack(fill="x", pady=SPACING_SM)
+    
+    # Results
+    results_frame = make_frame(container)
+    results_frame.pack(fill="x")
+    
+    for i, (name, status, time_ms) in enumerate(results):
+        make_label(results_frame, name, category="Body").grid(row=i, column=0, sticky="w", padx=(0, SPACING_LG), pady=SPACING_XS)
+        
+        if status == "OK":
+            status_label = make_label(results_frame, "✓ OK", category="Success")
+        else:
+            status_label = make_label(results_frame, f"✗ {status[:30]}", category="Error")
+        status_label.grid(row=i, column=1, sticky="w", padx=(0, SPACING_LG), pady=SPACING_XS)
+        
+        make_label(results_frame, f"{time_ms:.2f}", category="Body").grid(row=i, column=2, sticky="e", pady=SPACING_XS)
+    
+    # Total time
+    total_time = sum(r[2] for r in results)
+    make_divider(container).pack(fill="x", pady=SPACING_SM)
+    make_label(container, f"Total import time: {total_time:.2f} ms", category="Body", weight="Bold").pack(anchor="e")
+
+
+def build_tab_styles(parent: tk.Misc, style_obj: ttk.Style) -> None:
+    """Build the Style Explorer tab."""
+    container = ttk.Frame(parent, style="TFrame")
+    container.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(container, "Style Explorer", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    info = get_style_info(style_obj)
+    
+    # Theme info
+    make_label(container, f"Active Theme: {info['theme']}", category="Body", weight="Bold").pack(anchor="w")
+    make_label(container, f"Available: {', '.join(info['available_themes'])}", category="Body").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    make_divider(container).pack(fill="x", pady=SPACING_SM)
+    
+    # Fonts
+    make_label(container, "Named Fonts", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(SPACING_SM, SPACING_XS))
+    
+    for name, details in info["fonts"].items():
+        if details:
+            text = f"{name}: {details.get('family', '?')} {details.get('size', '?')}pt"
+            if details.get('weight') == 'bold':
+                text += " (bold)"
+            make_label(container, text, category="Body").pack(anchor="w")
+        else:
+            make_label(container, f"{name}: Not registered", category="Warning").pack(anchor="w")
+    
+    make_divider(container).pack(fill="x", pady=SPACING_SM)
+    
+    # Key styles
+    make_label(container, "Key Styles", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(SPACING_SM, SPACING_XS))
+    
+    style_frame = make_frame(container)
+    style_frame.pack(fill="x")
+    
+    for i, (style_name, exists) in enumerate(info["key_styles"].items()):
+        col = i % 2
+        row = i // 2
+        status = "✓" if exists else "✗"
+        category = "Success" if exists else "Error"
+        make_label(style_frame, f"{status} {style_name}", category=category).grid(row=row, column=col, sticky="w", padx=(0, SPACING_LG), pady=SPACING_XS)
+
+
+def build_tab_colours(parent: tk.Misc) -> None:
+    """Build the Colour Palette tab."""
+    container = ttk.Frame(parent, style="TFrame")
+    container.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(container, "Colour Palette", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    make_label(container, "Design tokens from G01a_style_config", category="Body").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    colours = get_colour_palette()
+    
+    # Create swatches
+    swatch_frame = make_frame(container)
+    swatch_frame.pack(fill="both", expand=True)
+    
+    for i, (name, colour) in enumerate(colours.items()):
+        row = i // 3
+        col = i % 3
+        
+        cell = make_frame(swatch_frame)
+        cell.grid(row=row, column=col, sticky="nsew", padx=SPACING_SM, pady=SPACING_SM)
+        
+        # Colour swatch (using a frame with background)
+        try:
+            swatch = tk.Frame(cell, width=60, height=40, bg=colour, relief="solid", bd=1)
+            swatch.pack(anchor="w")
+            swatch.pack_propagate(False)
+        except Exception:
+            make_label(cell, "[Invalid]", category="Error").pack(anchor="w")
+        
+        # Short name
+        short_name = name.replace("GUI_COLOUR_", "").replace("TEXT_COLOUR_", "T_").replace("BUTTON_", "BTN_")
+        make_label(cell, short_name, category="Body", weight="Bold").pack(anchor="w")
+        make_label(cell, colour, category="Body").pack(anchor="w")
+    
+    # Configure grid weights
+    for i in range(3):
+        swatch_frame.columnconfigure(i, weight=1)
+
+
+def build_tab_widgets(parent: tk.Misc) -> None:
+    """Build the Widget Gallery tab."""
+    # Use a canvas with scrollbar for this tab
+    canvas = tk.Canvas(parent, bg=GUI_COLOUR_BG_PRIMARY, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+    
+    container = ttk.Frame(canvas, style="TFrame")
+    
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    
+    canvas_window = canvas.create_window((0, 0), window=container, anchor="nw")
+    
+    def configure_scroll(event: Any) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.itemconfig(canvas_window, width=event.width)
+    
+    container.bind("<Configure>", configure_scroll)
+    canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas_window, width=e.width))
+    
+    # Content
+    inner = ttk.Frame(container, style="TFrame")
+    inner.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(inner, "Widget Gallery", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    # Labels section
+    make_label(inner, "Labels", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(SPACING_MD, SPACING_SM))
+    make_label(inner, "Body text (Primary/Normal)", category="Body").pack(anchor="w")
+    make_label(inner, "Body text Bold", category="Body", weight="Bold").pack(anchor="w")
+    make_label(inner, "Success message", category="Success").pack(anchor="w")
+    make_label(inner, "Warning message", category="Warning").pack(anchor="w")
+    make_label(inner, "Error message", category="Error").pack(anchor="w")
+    
+    make_divider(inner).pack(fill="x", pady=SPACING_MD)
+    
+    # Buttons section
+    make_label(inner, "Buttons", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_SM))
+    btn_row = make_horizontal_group(inner)
+    make_button(btn_row, "Primary").pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_row, "Secondary", style="Secondary.TButton").pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_row, "Success", style="Success.TButton").pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_row, "Warning", style="Warning.TButton").pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_row, "Danger", style="Danger.TButton").pack(side="left")
+    btn_row.pack(anchor="w")
+    
+    make_divider(inner).pack(fill="x", pady=SPACING_MD)
+    
+    # Inputs section
+    make_label(inner, "Inputs", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_SM))
+    
+    input_frame = make_frame(inner)
+    input_frame.pack(fill="x")
+    
+    make_label(input_frame, "Entry:", category="Body").grid(row=0, column=0, sticky="e", padx=(0, SPACING_SM))
+    make_entry(input_frame, width=30).grid(row=0, column=1, sticky="w", pady=SPACING_XS)
+    
+    make_label(input_frame, "Combobox:", category="Body").grid(row=1, column=0, sticky="e", padx=(0, SPACING_SM))
+    make_combobox(input_frame, values=["Option A", "Option B", "Option C"], width=28).grid(row=1, column=1, sticky="w", pady=SPACING_XS)
+    
+    make_divider(inner).pack(fill="x", pady=SPACING_MD)
+    
+    # Choice widgets
+    make_label(inner, "Choice Widgets", category="SectionHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_SM))
+    
+    chk_var = tk.BooleanVar(value=True)
+    make_checkbox(inner, "Checkbox option", variable=chk_var).pack(anchor="w")
+    
+    radio_var = tk.StringVar(value="A")
+    radio_row = make_horizontal_group(inner)
+    make_radio(radio_row, "Radio A", variable=radio_var, value="A").pack(side="left", padx=(0, SPACING_MD))
+    make_radio(radio_row, "Radio B", variable=radio_var, value="B").pack(side="left", padx=(0, SPACING_MD))
+    make_radio(radio_row, "Radio C", variable=radio_var, value="C").pack(side="left")
+    radio_row.pack(anchor="w", pady=SPACING_XS)
+    
+    switch_var = tk.BooleanVar(value=False)
+    make_switch(inner, "Toggle switch", variable=switch_var).pack(anchor="w")
+
+
+def build_tab_performance(parent: tk.Misc, style_obj: ttk.Style) -> None:
+    """Build the Performance tab."""
+    container = ttk.Frame(parent, style="TFrame")
+    container.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(container, "Performance Metrics", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    
+    results_frame = make_frame(container)
+    results_frame.pack(fill="x", pady=(0, SPACING_LG))
+    
+    results_text = make_textarea(container, height=15)
+    results_text.pack(fill="both", expand=True)
+    
+    def run_benchmarks() -> None:
+        results_text.delete("1.0", "end")
+        results_text.insert("end", "Running benchmarks...\n\n")
+        results_text.update()
+        
+        benchmarks: List[TimingResult] = []
+        
+        # Benchmark: Create 100 labels
+        test_frame = ttk.Frame(container)
+        def create_labels():
+            for i in range(100):
+                lbl = make_label(test_frame, f"Label {i}", category="Body")
+        benchmarks.append(time_operation("Create 100 labels", create_labels))
+        test_frame.destroy()
+        
+        # Benchmark: Create 50 buttons
+        test_frame = ttk.Frame(container)
+        def create_buttons():
+            for i in range(50):
+                btn = make_button(test_frame, f"Button {i}")
+        benchmarks.append(time_operation("Create 50 buttons", create_buttons))
+        test_frame.destroy()
+        
+        # Benchmark: Create 50 entries
+        test_frame = ttk.Frame(container)
+        def create_entries():
+            for i in range(50):
+                ent = make_entry(test_frame)
+        benchmarks.append(time_operation("Create 50 entries", create_entries))
+        test_frame.destroy()
+        
+        # Benchmark: Style lookup
+        def style_lookups():
+            for _ in range(100):
+                style_obj.lookup("TLabel", "font")
+                style_obj.lookup("TButton", "background")
+        benchmarks.append(time_operation("100 style lookups", style_lookups))
+        
+        # Display results
+        results_text.delete("1.0", "end")
+        results_text.insert("end", "Benchmark Results\n")
+        results_text.insert("end", "=" * 50 + "\n\n")
+        
+        for result in benchmarks:
+            status = "✓" if result.success else "✗"
+            if result.success:
+                results_text.insert("end", f"{status} {result.name}: {result.duration_ms:.2f} ms\n")
+            else:
+                results_text.insert("end", f"{status} {result.name}: FAILED - {result.error}\n")
+        
+        total = sum(r.duration_ms for r in benchmarks if r.success)
+        results_text.insert("end", f"\nTotal: {total:.2f} ms\n")
+    
+    btn_frame = make_horizontal_group(container)
+    make_button(btn_frame, "Run Benchmarks", command=run_benchmarks).pack(side="left")
+    btn_frame.pack(anchor="w", pady=(SPACING_MD, 0))
+
+
+def build_tab_logs(parent: tk.Misc) -> None:
+    """Build the Log Viewer tab."""
+    container = ttk.Frame(parent, style="TFrame")
+    container.pack(fill="both", expand=True, padx=SPACING_LG, pady=SPACING_LG)
+    
+    make_label(container, "Log Viewer", category="WindowHeading", weight="Bold").pack(anchor="w", pady=(0, SPACING_MD))
+    make_label(container, "Real-time log output from the application", category="Body").pack(anchor="w", pady=(0, SPACING_SM))
+    
+    # Log text widget
+    log_text = scrolledtext.ScrolledText(
+        container,
+        height=20,
+        font=("Consolas", 9),
+        bg=GUI_COLOUR_BG_TEXTAREA,
+        state="disabled",
+    )
+    log_text.pack(fill="both", expand=True, pady=(0, SPACING_SM))
+    
+    # Add handler to root logger
+    handler = TextHandler(log_text)
+    handler.setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(handler)
+    
+    # Control buttons
+    btn_frame = make_horizontal_group(container)
+    
+    def clear_logs():
+        log_text.configure(state="normal")
+        log_text.delete("1.0", "end")
+        log_text.configure(state="disabled")
+    
+    def test_log():
+        logger.info("Test INFO message from debug console")
+        logger.warning("Test WARNING message")
+        logger.error("Test ERROR message")
+    
+    make_button(btn_frame, "Clear", command=clear_logs, style="Secondary.TButton").pack(side="left", padx=(0, SPACING_SM))
+    make_button(btn_frame, "Test Log", command=test_log).pack(side="left")
+    btn_frame.pack(anchor="w")
+
+
+# ====================================================================================================
+# 7. MAIN DEBUG CONSOLE
+# ====================================================================================================
+def run_debug_console() -> None:
+    """Entry point: build and run the enhanced debug console."""
+    init_logging()
+    logger.info("=== G02d Debug Console v2 — Starting ===")
+    
+    # Window setup
+    try:
+        root = Window(themename="flatly")
+        style_obj = Style()
+        logger.info("[G02d] Using ttkbootstrap")
     except Exception:
         root = tk.Tk()
         style_obj = ttk.Style()
-        logger.info("[G02d] Falling back to standard Tk/ttk.")
-
-    root.title("G02d – Debug Console")
-    root.geometry(f"{FRAME_SIZE_H}x{FRAME_SIZE_V}")
+        logger.info("[G02d] Using standard Tk/ttk")
+    
+    root.title("G02d Debug Console v2")
+    root.geometry(f"{FRAME_SIZE_H + 100}x{FRAME_SIZE_V + 50}")
     root.configure(bg=GUI_COLOUR_BG_PRIMARY)
-
-    # Apply global ttk styles
-    configure_ttk_styles(style_obj)  # type: ignore[arg-type]
-    logger.info("[G02d] configure_ttk_styles applied successfully.")
-
-    # -----------------------------------------------------------------------------------------------
-    # Notebook + tabs
-    # -----------------------------------------------------------------------------------------------
+    
+    configure_ttk_styles(style_obj)
+    
+    # Notebook
     notebook = ttk.Notebook(root)
-    notebook.pack(fill="both", expand=True, padx=FRAME_PADDING, pady=FRAME_PADDING)
-
-    tab_imports = ttk.Frame(notebook, style="SectionOuter.TFrame")
-    tab_widgets = ttk.Frame(notebook, style="SectionOuter.TFrame")
-    tab_layout_helpers = ttk.Frame(notebook, style="SectionOuter.TFrame")
-    tab_containers = ttk.Frame(notebook, style="SectionOuter.TFrame")
-    tab_forms = ttk.Frame(notebook, style="SectionOuter.TFrame")
-
-    notebook.add(tab_imports, text="Imports & Styles")
-    notebook.add(tab_widgets, text="Widget Primitives")
-    notebook.add(tab_layout_helpers, text="Layout Helpers")
-    notebook.add(tab_containers, text="Container Patterns")
-    notebook.add(tab_forms, text="Form Patterns")
-
-    # Build each tab (auto-run tests)
-    build_tab_imports_and_styles(tab_imports, style_obj)
-    build_tab_widget_primitives(tab_widgets)
-    build_tab_layout_helpers(tab_layout_helpers)
-    build_tab_container_patterns(tab_containers)
-    build_tab_form_patterns(tab_forms)
-
-    logger.info("=== G02d_debug_utils – Debug Console Ready ===")
+    notebook.pack(fill="both", expand=True, padx=SPACING_MD, pady=SPACING_MD)
+    
+    # Create tabs
+    tabs = [
+        ("System Info", lambda p: build_tab_system_info(p)),
+        ("Imports", lambda p: build_tab_imports(p)),
+        ("Styles", lambda p: build_tab_styles(p, style_obj)),
+        ("Colours", lambda p: build_tab_colours(p)),
+        ("Widgets", lambda p: build_tab_widgets(p)),
+        ("Performance", lambda p: build_tab_performance(p, style_obj)),
+        ("Logs", lambda p: build_tab_logs(p)),
+    ]
+    
+    for name, builder in tabs:
+        tab = ttk.Frame(notebook, style="TFrame")
+        notebook.add(tab, text=name)
+        builder(tab)
+    
+    logger.info("=== G02d Debug Console v2 — Ready ===")
     root.mainloop()
-    logger.info("=== G02d_debug_utils – Debug Console End ===")
+    logger.info("=== G02d Debug Console v2 — Closed ===")
 
 
 # ====================================================================================================
-# 6. MAIN GUARD
-# ----------------------------------------------------------------------------------------------------
+# 8. MAIN GUARD
+# ====================================================================================================
 if __name__ == "__main__":
     run_debug_console()

@@ -78,10 +78,12 @@ sys.dont_write_bytecode = True
 # ----------------------------------------------------------------------------------------------------
 
 import calendar                                          # Calendar utilities
+from copy import deepcopy                                # Deep/shallow copy operations
 import contextlib                                        # Context manager utilities
 import csv                                               # CSV reader/writer
-import datetime as dt                                   # Primary datetime module (aliased)
-from datetime import date, timedelta, datetime          # Common date utilities
+from dataclasses import dataclass                        # Data class decorator
+import datetime as dt                                    # Primary datetime module (aliased)
+from datetime import date, timedelta, datetime           # Common date utilities
 import getpass                                           # Get current username (useful for WSL/paths)
 import glob                                              # Wildcard file matching
 import hashlib                                           # Standard library hashing (MD5/SHA families)

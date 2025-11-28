@@ -120,7 +120,7 @@ from gui.G02a_layout_utils import attach_layout_helpers
 
 
 # ====================================================================================================
-# 3. INTERNAL HELPER FUNCTIONS (GEOMETRY & TK-ONLY FONT)
+# 3. INTERNAL HELPER FUNCTIONS (GEOMETRY, FONT, STYLE NORMALISATION)
 # ----------------------------------------------------------------------------------------------------
 # These helpers are internal in intent but named without underscores to comply with
 # Global Coding Standards (no functions starting with an underscore).
@@ -237,6 +237,94 @@ def strip_colour_and_font_kwargs(options: MutableMapping[str, Any]) -> None:
             options.pop(bad, None)
 
 
+def normalise_label_style_name(
+    style_name: str,
+    *,
+    category_hint: str | None = None,
+    surface_hint: str | None = None,
+    weight_hint: str | None = None,
+) -> str:
+    """
+    Normalise ttk.Label style names into the canonical format used by G01b.
+
+    Canonical patterns:
+        Body labels:
+            "{Surface}.{Weight}.TLabel"
+        Other label categories:
+            "{Surface}.{Category}.{Weight}.TLabel"
+
+    Examples repaired:
+        - "WindowHeading.Primary.Bold.TLabel"
+              → "Primary.WindowHeading.Bold.TLabel"
+        - "Heading.Secondary.TLabel"        (no weight)
+              → "Secondary.Heading.Bold.TLabel"
+        - "Primary.SectionHeading.TLabel"   (no weight)
+              → "Primary.SectionHeading.Bold.TLabel"
+
+    Non-label styles (not ending in ".TLabel") are returned unchanged.
+
+    Args:
+        style_name (str):
+            Raw style name provided by the caller.
+        category_hint (str | None):
+            Optional semantic category hint (Body, Heading, SectionHeading, etc.).
+        surface_hint (str | None):
+            Optional Surface hint (Primary/Secondary).
+        weight_hint (str | None):
+            Optional Weight hint (Normal/Bold).
+
+    Returns:
+        str:
+            Canonicalised style name safe for lookup in the G01b style engine.
+    """
+    if not style_name.endswith(".TLabel"):
+        return style_name
+
+    # Strip suffix and split into tokens (e.g. "WindowHeading.Primary.Bold")
+    base = style_name[:-len(".TLabel")]
+    parts = [p for p in base.split(".") if p]
+
+    surfaces = {"Primary", "Secondary"}
+    weights = {"Normal", "Bold"}
+    categories = set(LABEL_CATEGORIES)
+
+    found_surface: str | None = None
+    found_weight: str | None = None
+    found_category: str | None = None
+
+    for token in parts:
+        if token in surfaces:
+            found_surface = token
+        elif token in weights:
+            found_weight = token
+        elif token in categories:
+            found_category = token
+
+    # Fallbacks from hints or sensible defaults
+    surface = found_surface or surface_hint or "Primary"
+    weight = found_weight or weight_hint or "Bold"
+    category = found_category or category_hint or "Body"
+
+    # Normalise category for Body (2-part scheme) vs others (3-part scheme)
+    if category == "Body":
+        canonical = f"{surface}.{weight}.TLabel"
+    else:
+        canonical = f"{surface}.{category}.{weight}.TLabel"
+
+    if canonical != style_name:
+        logger.debug(
+            "[G01c] normalise_label_style_name: repaired %r → %r "
+            "(surface=%s, category=%s, weight=%s)",
+            style_name,
+            canonical,
+            surface,
+            category,
+            weight,
+        )
+
+    return canonical
+
+
 # ====================================================================================================
 # 4. TEXTUAL WIDGET PRIMITIVES
 # ----------------------------------------------------------------------------------------------------
@@ -265,11 +353,19 @@ def strip_colour_and_font_kwargs(options: MutableMapping[str, Any]) -> None:
 # make_label(...) is the generic builder; UIPrimitives will expose wrappers.
 # ====================================================================================================
 
-
 # ----------------------------------------------------------------------------------------------------
 # Valid parameter values (for validation and documentation)
 # ----------------------------------------------------------------------------------------------------
-LABEL_CATEGORIES = ("Body", "Heading", "SectionHeading", "WindowHeading", "Card", "Success", "Warning", "Error")
+LABEL_CATEGORIES = (
+    "Body",
+    "Heading",
+    "SectionHeading",
+    "WindowHeading",
+    "Card",
+    "Success",
+    "Warning",
+    "Error",
+)
 LABEL_SURFACES = ("Primary", "Secondary")
 LABEL_WEIGHTS = ("Normal", "Bold")
 
@@ -292,6 +388,11 @@ def make_label(
         dynamically from category, surface, and weight parameters, ensuring
         consistency with the G01b style matrix.
 
+        Any explicit or legacy style name passed via `style=` or kwargs["style"]
+        is automatically normalised into the canonical G01b format, so older
+        code such as "WindowHeading.Primary.Bold.TLabel" continues to work and
+        maps to "Primary.WindowHeading.Bold.TLabel".
+
     Args:
         parent (tk.Misc):
             Parent container widget.
@@ -307,7 +408,7 @@ def make_label(
             Font weight. One of: Normal, Bold. Default: "Normal".
         style (str | None):
             Explicit style override. If provided, category/surface/weight
-            are ignored. Default: None.
+            are used as hints for normalisation. Default: None.
         **kwargs (Any):
             Additional ttk.Label options (e.g., anchor, justify, wraplength).
 
@@ -322,14 +423,14 @@ def make_label(
         - Geometry kwargs (padx, pady, ipadx, ipady) are extracted and stored
           on widget.geometry_kwargs for layout utilities (G02a).
         - Direct colour/font kwargs are stripped to enforce style-only appearance.
-        - Style name format:
-            Body:  "{surface}.{weight}.TLabel"
-            Other: "{surface}.{category}.{weight}.TLabel"
+        - Canonical style name format:
+            Body:  "{Surface}.{Weight}.TLabel"
+            Other: "{Surface}.{Category}.{Weight}.TLabel"
     """
     geometry = extract_geometry_kwargs(kwargs)
     strip_colour_and_font_kwargs(kwargs)
 
-    # Build style name from parameters (unless explicit style provided)
+    # Build base style name from parameters (if no explicit override is given)
     if style is not None:
         style_name = style
     elif category == "Body":
@@ -337,8 +438,17 @@ def make_label(
     else:
         style_name = f"{surface}.{category}.{weight}.TLabel"
 
-    # Allow style in kwargs to override (for backward compatibility)
-    style_name = kwargs.pop("style", style_name)
+    # Allow style in kwargs to override (legacy usage), then normalise
+    raw_style_from_kwargs = kwargs.pop("style", None)
+    if raw_style_from_kwargs is not None:
+        style_name = raw_style_from_kwargs
+
+    style_name = normalise_label_style_name(
+        style_name,
+        category_hint=category,
+        surface_hint=surface,
+        weight_hint=weight,
+    )
 
     options: Dict[str, Any] = {
         "text": text,
@@ -434,7 +544,7 @@ def make_section_heading(
         Default style: "Primary.SectionHeading.Bold.TLabel"
     """
     if style is not None:
-        return make_label(parent, text, style=style, **kwargs)
+        return make_label(parent, text, category="SectionHeading", style=style, **kwargs)
     surface = kwargs.pop("surface", "Primary")
     weight = kwargs.pop("weight", "Bold")
     return make_label(parent, text, category="SectionHeading", surface=surface, weight=weight, **kwargs)
@@ -446,8 +556,8 @@ def make_subheading(parent: tk.Misc, text: str, **kwargs: Any) -> ttk.Label:  # 
 
     Description:
         Legacy wrapper for make_label() with category="SectionHeading".
-        Functionally identical to make_section_heading().
-        New code should use make_label() directly.
+        Functionally identical to make_section_heading(). New code should use
+        make_label() directly.
 
     Args:
         parent (tk.Misc):
@@ -540,15 +650,14 @@ def make_status_label(
 
     Notes:
         Status to category mapping:
-            - info    → Body (uses "Primary.Normal.TLabel")
-            - success → Success (uses "Primary.Success.Normal.TLabel")
-            - warning → Warning (uses "Primary.Warning.Normal.TLabel")
-            - error   → Error (uses "Primary.Error.Normal.TLabel")
+            - info    → Body   (uses "{Surface}.Normal.TLabel")
+            - success → Success
+            - warning → Warning
+            - error   → Error
     """
     surface = kwargs.pop("surface", "Primary")
     weight = kwargs.pop("weight", "Normal")
 
-    # Map status to category
     status_to_category = {
         "info": "Body",
         "success": "Success",
@@ -856,7 +965,6 @@ def make_checkbox(
     return widget
 
 
-
 # ----------------------------------------------------------------------------------------------------
 # RADIO BUTTON
 # ----------------------------------------------------------------------------------------------------
@@ -943,7 +1051,6 @@ def make_radio(
     widget: ttk.Radiobutton = ttk.Radiobutton(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
-
 
 
 # ----------------------------------------------------------------------------------------------------
@@ -1045,7 +1152,6 @@ def make_switch(
 #       widget.geometry_kwargs for G02 layout utilities.
 # ----------------------------------------------------------------------------------------------------
 
-
 def make_frame(parent: tk.Misc, **kwargs: Any) -> ttk.Frame:  # type: ignore[name-defined]
     """
     Create a themed structural frame container.
@@ -1083,7 +1189,6 @@ def make_frame(parent: tk.Misc, **kwargs: Any) -> ttk.Frame:  # type: ignore[nam
     widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
     return widget
-
 
 
 def make_divider(
@@ -1139,7 +1244,6 @@ def make_divider(
     return widget
 
 
-
 def make_spacer(
     parent: tk.Misc,
     height: int = 8,
@@ -1184,6 +1288,345 @@ def make_spacer(
     )
     widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
     widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    return widget
+
+
+# ----------------------------------------------------------------------------------------------------
+# LAYOUT CONTAINER PRIMITIVES
+# ----------------------------------------------------------------------------------------------------
+# These factories create pre-configured container frames for common layout patterns.
+# Unlike raw frames, they have semantic roles and sensible defaults.
+#
+# USAGE PATTERN:
+#   container = make_button_bar(parent)
+#   make_button(container, "Cancel", style="Secondary.TButton").pack(side="right")
+#   make_button(container, "Save").pack(side="right", padx=(8, 0))
+#   container.pack(fill="x", side="bottom")
+# ----------------------------------------------------------------------------------------------------
+
+def make_button_bar(
+    parent: tk.Misc,
+    *,
+    style: str = "TFrame",
+    **kwargs: Any,
+) -> ttk.Frame:  # type: ignore[name-defined]
+    """
+    Create a container frame for horizontal button layouts.
+
+    Provides a semantic container for action buttons (Save, Cancel, etc.).
+    Buttons should be created as children of this container and packed
+    with side="right" or side="left".
+
+    Default style:
+        - "TFrame" (inherits parent background)
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        style (str):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options.
+
+    Returns:
+        ttk.Frame:
+            Button bar container with:
+                - .geometry_kwargs: Extracted geometry hints
+                - .g01c_role: "button_bar" (semantic identifier)
+
+    Example:
+        bar = make_button_bar(form_frame)
+        make_button(bar, "Cancel", style="Secondary.TButton").pack(side="right")
+        make_button(bar, "Save").pack(side="right", padx=(8, 0))
+        bar.pack(fill="x", side="bottom", pady=(12, 0))
+    """
+    geometry = extract_geometry_kwargs(kwargs)
+
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {"style": style}
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_button_bar: style=%s options=%r geometry=%r",
+        style, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
+    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    widget.g01c_role = "button_bar"  # type: ignore[attr-defined]
+    return widget
+
+
+def make_horizontal_group(
+    parent: tk.Misc,
+    *,
+    style: str = "TFrame",
+    **kwargs: Any,
+) -> ttk.Frame:  # type: ignore[name-defined]
+    """
+    Create a container for horizontally arranged widgets.
+
+    Children should be packed with side="left" and appropriate padx for spacing.
+
+    Default style:
+        - "TFrame"
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        style (str):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options.
+
+    Returns:
+        ttk.Frame:
+            Horizontal group container with:
+                - .geometry_kwargs: Extracted geometry hints
+                - .g01c_role: "horizontal_group"
+
+    Example:
+        row = make_horizontal_group(content)
+        make_label(row, "Status:", category="Body", weight="Bold").pack(side="left")
+        make_label(row, "Connected", category="Body").pack(side="left", padx=(4, 0))
+        row.pack(anchor="w")
+    """
+    geometry = extract_geometry_kwargs(kwargs)
+
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {"style": style}
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_horizontal_group: style=%s options=%r geometry=%r",
+        style, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
+    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    widget.g01c_role = "horizontal_group"  # type: ignore[attr-defined]
+    return widget
+
+
+def make_vertical_group(
+    parent: tk.Misc,
+    *,
+    style: str = "TFrame",
+    **kwargs: Any,
+) -> ttk.Frame:  # type: ignore[name-defined]
+    """
+    Create a container for vertically stacked widgets.
+
+    Children should be packed with side="top" or anchor="w" and appropriate pady.
+
+    Default style:
+        - "TFrame"
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        style (str):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options.
+
+    Returns:
+        ttk.Frame:
+            Vertical group container with:
+                - .geometry_kwargs: Extracted geometry hints
+                - .g01c_role: "vertical_group"
+
+    Example:
+        col = make_vertical_group(sidebar)
+        make_label(col, "Dashboard", category="Body").pack(anchor="w")
+        make_label(col, "Settings", category="Body").pack(anchor="w", pady=(4, 0))
+        col.pack(fill="y")
+    """
+    geometry = extract_geometry_kwargs(kwargs)
+
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {"style": style}
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_vertical_group: style=%s options=%r geometry=%r",
+        style, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
+    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    widget.g01c_role = "vertical_group"  # type: ignore[attr-defined]
+    return widget
+
+
+def make_card(
+    parent: tk.Misc,
+    *,
+    style: str = "Card.TFrame",
+    **kwargs: Any,
+) -> ttk.Frame:  # type: ignore[name-defined]
+    """
+    Create a styled card container with distinct background.
+
+    Cards are used to visually group related content with a secondary
+    background colour. Content inside should use Secondary surface labels.
+
+    Default style:
+        - "Card.TFrame" (uses GUI_COLOUR_BG_SECONDARY from G01a)
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        style (str):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options (e.g., padding).
+
+    Returns:
+        ttk.Frame:
+            Card container with:
+                - .geometry_kwargs: Extracted geometry hints
+                - .g01c_role: "card"
+
+    Example:
+        card = make_card(content, padding=12)
+        make_label(card, "User Info", category="SectionHeading", surface="Secondary").pack(anchor="w")
+        make_label(card, "Name: John", category="Body", surface="Secondary").pack(anchor="w")
+        card.pack(fill="x", pady=(8, 0))
+    """
+    geometry = extract_geometry_kwargs(kwargs)
+
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {"style": style}
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_card: style=%s options=%r geometry=%r",
+        style, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
+    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    widget.g01c_role = "card"  # type: ignore[attr-defined]
+    return widget
+
+
+def make_sidebar(
+    parent: tk.Misc,
+    *,
+    width: int = 200,
+    style: str = "Secondary.TFrame",
+    **kwargs: Any,
+) -> ttk.Frame:  # type: ignore[name-defined]
+    """
+    Create a sidebar container with fixed width and secondary background.
+
+    Sidebars are typically used for navigation or tool panels alongside
+    main content areas.
+
+    Default style:
+        - "Secondary.TFrame" (uses GUI_COLOUR_BG_SECONDARY)
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        width (int):
+            Fixed sidebar width in pixels (default=200).
+        style (str):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options.
+
+    Returns:
+        ttk.Frame:
+            Sidebar container with:
+                - .geometry_kwargs: Extracted geometry hints
+                - .g01c_role: "sidebar"
+                - .g01c_width: Configured width
+
+    Example:
+        sidebar = make_sidebar(main_frame, width=220)
+        make_label(sidebar, "Navigation", category="SectionHeading", surface="Secondary").pack(anchor="w", padx=8)
+        sidebar.pack(side="left", fill="y")
+    """
+    geometry = extract_geometry_kwargs(kwargs)
+
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {
+        "style": style,
+        "width": width,
+    }
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_sidebar: style=%s width=%d options=%r geometry=%r",
+        style, width, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
+    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    widget.g01c_role = "sidebar"  # type: ignore[attr-defined]
+    widget.g01c_width = width  # type: ignore[attr-defined]
+    return widget
+
+
+def make_toolbar(
+    parent: tk.Misc,
+    *,
+    height: int = 40,
+    style: str = "Secondary.TFrame",
+    **kwargs: Any,
+) -> ttk.Frame:  # type: ignore[name-defined]
+    """
+    Create a toolbar container for action buttons and controls.
+
+    Toolbars are typically placed at the top of a content area and contain
+    action buttons, search fields, or filter controls.
+
+    Default style:
+        - "Secondary.TFrame"
+
+    Args:
+        parent (tk.Misc):
+            Parent widget.
+        height (int):
+            Toolbar height in pixels (default=40).
+        style (str):
+            Optional ttk style override.
+        **kwargs:
+            Additional Frame options.
+
+    Returns:
+        ttk.Frame:
+            Toolbar container with:
+                - .geometry_kwargs: Extracted geometry hints
+                - .g01c_role: "toolbar"
+                - .g01c_height: Configured height
+
+    Example:
+        toolbar = make_toolbar(content, height=48)
+        make_button(toolbar, "New").pack(side="left", padx=4)
+        make_button(toolbar, "Save").pack(side="left")
+        toolbar.pack(fill="x", side="top")
+    """
+    geometry = extract_geometry_kwargs(kwargs)
+
+    strip_colour_and_font_kwargs(kwargs)
+
+    options: Dict[str, Any] = {
+        "style": style,
+        "height": height,
+    }
+    options.update(kwargs)
+
+    logger.debug(
+        "[G01c] make_toolbar: style=%s height=%d options=%r geometry=%r",
+        style, height, options, geometry,
+    )
+    widget: ttk.Frame = ttk.Frame(parent, **options)  # type: ignore[assignment]
+    widget.geometry_kwargs = geometry  # type: ignore[attr-defined]
+    widget.g01c_role = "toolbar"  # type: ignore[attr-defined]
+    widget.g01c_height = height  # type: ignore[attr-defined]
     return widget
 
 
@@ -1323,7 +1766,6 @@ class UIPrimitives:
     ) -> ttk.Label:
         return make_label(parent, text, category="SectionHeading", surface="Secondary", weight="Bold", **kwargs)
 
-
     # ================================================================================================
     # STATUS LABELS
     # ================================================================================================
@@ -1416,6 +1858,33 @@ class UIPrimitives:
         **kwargs: Any,
     ) -> ttk.Frame:
         return make_spacer(parent, height=height, **kwargs)
+
+    # ================================================================================================
+    # LAYOUT CONTAINER PRIMITIVES
+    # ================================================================================================
+    def button_bar(self, parent: tk.Misc, **kwargs: Any) -> ttk.Frame:
+        """Create a button bar container. Pack buttons inside with side='right'."""
+        return make_button_bar(parent, **kwargs)
+
+    def horizontal_group(self, parent: tk.Misc, **kwargs: Any) -> ttk.Frame:
+        """Create a horizontal group container. Pack children with side='left'."""
+        return make_horizontal_group(parent, **kwargs)
+
+    def vertical_group(self, parent: tk.Misc, **kwargs: Any) -> ttk.Frame:
+        """Create a vertical group container. Pack children with anchor='w'."""
+        return make_vertical_group(parent, **kwargs)
+
+    def card(self, parent: tk.Misc, **kwargs: Any) -> ttk.Frame:
+        """Create a card container with secondary background."""
+        return make_card(parent, **kwargs)
+
+    def sidebar(self, parent: tk.Misc, width: int = 200, **kwargs: Any) -> ttk.Frame:
+        """Create a sidebar container with fixed width."""
+        return make_sidebar(parent, width=width, **kwargs)
+
+    def toolbar(self, parent: tk.Misc, height: int = 40, **kwargs: Any) -> ttk.Frame:
+        """Create a toolbar container."""
+        return make_toolbar(parent, height=height, **kwargs)
 
 
 # ====================================================================================================

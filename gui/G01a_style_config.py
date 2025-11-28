@@ -330,7 +330,11 @@ LABEL_ENTRY_SPACING = 5
 BUTTON_SPACING = 10                                       
 
 # Shared corner radius for cards, bordered frames, or custom widgets.
-BORDER_RADIUS = 6                                         
+BORDER_RADIUS = 6
+
+LAYOUT_COLUMN_GAP = 8     # Horizontal gap between columns in weighted rows
+LAYOUT_ROW_GAP = 12       # Vertical gap between rows in layouts
+LAYOUT_CARD_GAP = 8       # Gap between cards in a card row
 
 
 # ====================================================================================================
