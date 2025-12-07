@@ -104,19 +104,23 @@ import time                                              # Timing utilities, sle
 import zipfile                                           # ZIP archive utilities
 
 from typing import (
-    Any,                                                # Generic placeholder type for arbitrary objects
-    Callable,                                           # Callable[..., T] — function/method signatures
-    Dict,                                               # Dict[K, V] — standard dictionary mapping
-    Iterable,                                           # Iterable[T] — object capable of returning its members one at a time
-    List,                                               # List[T] — ordered, mutable sequence
-    Literal,                                            # Literal["A", "B"] — restricts variable to specific fixed values
-    MutableMapping,                                     # MutableMapping[K, V] — dict-like structure supporting mutation
-    Optional,                                           # Optional[T] — shorthand for T | None
-    overload,                                           # @overload decorator — type-safe function overload declarations
-    Sequence,                                           # Sequence[T] — read-only ordered collection (list/tuple-like)
-    Type,                                               # Type[T] — type object for class T    
-    Tuple,                                              # Tuple[T1, T2] — fixed-length tuple structure
-    Union                                               # Union[A, B] — variable may be one of multiple types
+    Any,                # Generic placeholder type — value may be of any type
+    Callable,           # Callable[[Args], Return] — function or method type signature
+    cast,               # Runtime type cast hint for static type checkers (no-op at runtime)
+    Dict,               # Dict[K, V] — mutable key/value mapping
+    Iterable,           # Iterable[T] — object capable of yielding items one at a time
+    List,               # List[T] — ordered, mutable collection
+    Literal,            # Literal["A", "B"] — restricts a variable to specific fixed values
+    Mapping,            # Mapping[K, V] — read-only key/value mapping interface
+    MutableMapping,     # MutableMapping[K, V] — mapping interface supporting item assignment
+    Optional,           # Optional[T] — shorthand for T | None
+    overload,           # @overload — define multiple static type signatures for one function
+    Protocol,           # Protocol — structural typing base class (duck-typing interfaces)
+    Sequence,           # Sequence[T] — read-only ordered container (tuple/list-like)
+    Type,               # Type[T] — type object for class T (e.g., used with isinstance / factories)
+    TYPE_CHECKING,      # True at type-check time only — avoids runtime imports in type-only branches
+    Tuple,              # Tuple[T1, T2] — fixed-length tuple type
+    Union               # Union[A, B] — value may be one of several allowed types (pre-PEP 604)
 )
 
 from concurrent.futures import (

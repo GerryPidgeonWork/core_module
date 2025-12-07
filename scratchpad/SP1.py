@@ -1,282 +1,329 @@
 # ====================================================================================================
-# SP1.py — Connection Launcher (Prototype Layout Test)
+# 1. SYSTEM IMPORTS
 # ----------------------------------------------------------------------------------------------------
-# Purpose:
-#   High-fidelity prototype page to validate the new 3-row / 4-column layout system:
-#
-#       • Top Row    → 30% Overview  + 70% Console Log
-#       • Middle Row → 4 × 25% configuration cards (Google Drive, Snowflake, Accounting Period, DWH)
-#       • Bottom Row → 4 × 25% provider tiles (medium-tall: 180–220px)
-#
-#   This file is for layout testing only — SP1 scripts are temporary/non-production.
+# These imports (sys, pathlib.Path) are required to correctly initialise the project environment,
+# ensure the core library can be imported safely (including C00_set_packages.py),
+# and prevent project-local paths from overriding installed site-packages.
 # ----------------------------------------------------------------------------------------------------
-# Author: Gerry Pidgeon
-# Created: 2025-11-26
-# Project: GUIBoilerplatePython — Scratchpad
-# ====================================================================================================
 
-from __future__ import annotations
+# --- Future behaviour & type system enhancements -----------------------------------------------------
+from __future__ import annotations           # Future-proof type hinting (PEP 563 / PEP 649)
 
-# ----------------------------------------------------------------------------------------------------
-# Import base framework
-# ----------------------------------------------------------------------------------------------------
-import sys
-from pathlib import Path
+# --- Required for dynamic path handling and safe importing of core modules ---------------------------
+import sys                                   # Python interpreter access (path, environment, runtime)
+from pathlib import Path                     # Modern, object-oriented filesystem path handling
 
+# --- Ensure project root DOES NOT override site-packages --------------------------------------------
 project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
+# --- Remove '' (current working directory) which can shadow installed packages -----------------------
+if "" in sys.path:
+    sys.path.remove("")
+
+# --- Prevent creation of __pycache__ folders ---------------------------------------------------------
+sys.dont_write_bytecode = True
+
+
+# ====================================================================================================
+# 2. PROJECT IMPORTS
+# ----------------------------------------------------------------------------------------------------
+# Bring in shared external packages from the central import hub.
+#
+# CRITICAL ARCHITECTURE RULE:
+#   ALL external + stdlib packages MUST be imported exclusively via:
+#       from core.C00_set_packages import *
+#   No other script may import external libraries directly.
+#
+# C01_set_file_paths is a pure core module and must not import GUI packages.
+# ----------------------------------------------------------------------------------------------------
 from core.C00_set_packages import *
-from core.C03_logging_handler import get_logger, init_logging
+
+# --- Initialise module-level logger -----------------------------------------------------------------
+from core.C03_logging_handler import get_logger, log_exception, init_logging
 logger = get_logger(__name__)
 
-# GUI packages
+# --- Additional project-level imports (append below this line only) ----------------------------------
+# Core Imports
 from gui.G00a_gui_packages import tk, ttk
 from gui.G01a_style_config import *
-from gui.G01b_style_engine import configure_ttk_styles
-from gui.G01c_widget_primitives import UIPrimitives, make_label, make_radio
-from gui.G01d_layout_primitives import heading, subheading, body_text, divider, spacer
-from gui.G01e_gui_base import BaseGUI
+from gui.G02c_gui_base import BaseWindow
+from gui.G02a_widget_primitives import *
+from gui.G02b_layout_utils import *
+
+# Pattern Imports
+from gui.G03a_layout_patterns import *
+from gui.G03b_container_patterns import *
+from gui.G03c_form_patterns import *
+from gui.G03d_table_patterns import *
+from gui.G03e_widget_components import *
 
 
-# ====================================================================================================
-# HELPER — Create a uniform card frame
-# ====================================================================================================
-def make_card(parent, min_height: int = 260) -> ttk.Frame:
-    card = ttk.Frame(parent, style="SectionBody.TFrame", padding=(14, 10))
-    card.pack_propagate(False)         # Enforce fixed height
-    card.configure(height=min_height)
-    return card
+class VisualTestWindow(BaseWindow):
+    def build_widgets(self) -> None:
+        # 1. Setup Main Page Layout
+        # ----------------------------------------------------------------
+        page = page_layout(self.main_frame, padding=SPACING_LG)
+        page.pack(fill="both", expand=True)
 
-
-# ====================================================================================================
-# MAIN TEST WINDOW
-# ====================================================================================================
-class SP1Window(BaseGUI):
-
-    def build_widgets(self):
-        # --------------------------------------------------------------------------------------------
-        # 1. WINDOW HEADING
-        # --------------------------------------------------------------------------------------------
-        heading(self.main_frame, "Connection Launcher (SP1)", surface="Primary").pack(
-            anchor="w", pady=(0, 4)
+        header, actions = action_header(
+            page,
+            title="SP1 — Framework Visual Test",
+            actions=[("Run Tests", None), ("Export Report", None)],
         )
-        body_text(
-            self.main_frame,
-            "Configure connection and execution settings for your data pipelines.",
-            surface="Primary",
-        ).pack(anchor="w", pady=(0, 12))
+        header.pack(fill="x", pady=(0, SPACING_LG))
 
-        # --------------------------------------------------------------------------------------------
-        # 2. TOP ROW — Overview (30%) + Console (70%)
-        # --------------------------------------------------------------------------------------------
-        top_row = ttk.Frame(self.main_frame, padding=4)
-        top_row.pack(fill="x", pady=(0, 16))
+        # 2. Typography & Primitives
+        # ----------------------------------------------------------------
+        self.add_section_header(page, "1. Typography & Primitives")
 
-        top_row.columnconfigure(0, weight=3)
-        top_row.columnconfigure(1, weight=7)
+        typo_card = card(page, role="SECONDARY")
+        typo_card.pack(fill="x", pady=(0, SPACING_MD))
 
-        # --- LEFT: Overview -------------------------------------------------------------------------
-        overview_card = make_card(top_row, min_height=160)
-        overview_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        stack_vertical(
+            typo_card,
+            [
+                page_title(typo_card, text="Display Text (Page Title)"),
+                section_title(
+                    typo_card, text="Heading Text (Section Title)"
+                ),
+                body_text(
+                    typo_card,
+                    text=(
+                        "Body text: The quick brown fox jumps over the lazy dog."
+                    ),
+                ),
+                small_text(
+                    typo_card,
+                    text=(
+                        "Small text: Used for captions and secondary information."
+                    ),
+                ),
+                meta_text(
+                    typo_card,
+                    text="Meta text: ID #12345 • Updated 2m ago",
+                ),
+            ],
+            spacing=SPACING_SM,
+        )
 
+        # 3. Interactive Controls
+        # ----------------------------------------------------------------
+        self.add_section_header(page, "2. Interactive Controls")
+
+        control_panel = panel(page, role="SECONDARY")
+        control_panel.pack(fill="x", pady=(0, SPACING_MD))
+
+        # Button Variants
+        section_title(control_panel, text="Button Variants").pack(
+            anchor="w", pady=(0, SPACING_SM)
+        )
+
+        btn_row = button_row(control_panel, alignment="left", padding=0)
+        btn_row.pack(fill="x", pady=(0, SPACING_MD))
+
+        variants = ["PRIMARY", "SECONDARY", "SUCCESS", "WARNING", "DANGER"]
+        for variant in variants:
+            make_button(
+                btn_row,
+                text=variant,
+                variant=variant,
+            ).pack(side="left", padx=(0, SPACING_SM))
+
+        divider(control_panel).pack(fill="x", pady=SPACING_MD)
+
+        # Toggles (Checkboxes / Radios / Switches)
+        toggle_row = layout_row(control_panel, weights=(1, 1, 1))
+        toggle_row.pack(fill="x")
+
+        # Col 1: Checkboxes
+        col1 = ttk.Frame(toggle_row)
+        col1.grid(row=0, column=0, sticky="w")
+        make_label(col1, text="Checkboxes", bold=True).pack(anchor="w")
+        make_checkbox(col1, text="Primary Option", variant="PRIMARY").pack(anchor="w")
+        make_checkbox(col1, text="Success Option", variant="SUCCESS").pack(anchor="w")
+
+        # Col 2: Radios
+        col2 = ttk.Frame(toggle_row)
+        col2.grid(row=0, column=1, sticky="w")
+        make_label(col2, text="Radio Buttons", bold=True).pack(anchor="w")
+        make_radio(col2, text="Option A", value="A", variant="PRIMARY").pack(anchor="w")
+        make_radio(col2, text="Option B", value="B", variant="WARNING").pack(anchor="w")
+
+        # Col 3: Switches
+        col3 = ttk.Frame(toggle_row)
+        col3.grid(row=0, column=2, sticky="w")
+        make_label(col3, text="Switches", bold=True).pack(anchor="w")
+        make_checkbox(col3, text="Toggle Feature", variant="PRIMARY").pack(anchor="w")
+
+        # 4. Containers & Alerts
+        # ----------------------------------------------------------------
+        self.add_section_header(page, "3. Containers & Alerts")
+
+        alert_row = layout_row(page, weights=(1, 1))
+        alert_row.pack(fill="x", pady=(0, SPACING_MD))
+
+        # Alerts
+        c_left = ttk.Frame(alert_row)
+        c_left.grid(row=0, column=0, sticky="nsew", padx=(0, SPACING_MD))
+
+        stack_vertical(
+            c_left,
+            [
+                alert_box(c_left, "Information note.", role="SECONDARY"),
+                alert_box(c_left, "Operation successful!", role="SUCCESS"),
+                alert_box(c_left, "Warning: Disk space low.", role="WARNING"),
+                alert_box(c_left, "Critical System Failure.", role="ERROR"),
+            ],
+            spacing=SPACING_XS,
+        )
+
+        # Surfaces
+        c_right = ttk.Frame(alert_row)
+        c_right.grid(row=0, column=1, sticky="nsew")
+
+        surf = surface(c_right, role="SECONDARY", shade="MID")
+        surf.pack(fill="both", expand=True)
         make_label(
-            overview_card, "Overview",
-            category="SectionHeading", surface="Secondary", weight="Bold"
-        ).pack(anchor="w")
-
-        body_text(
-            overview_card,
-            "Review and confirm your high-level settings before running any jobs.\n"
-            "Use the configuration cards below to adjust periods, credentials, and provider selection.\n"
-            "The console on the right shows recent execution logs and connection tests.",
-            surface="Secondary",
-            wraplength=350
-        ).pack(anchor="w", pady=(4, 4))
-
-        # --- RIGHT: Console -------------------------------------------------------------------------
-        console_card = make_card(top_row, min_height=160)
-        console_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-
+            surf,
+            text="Surface Container (No Border)",
+        ).pack()
         make_label(
-            console_card, "Console Log",
-            category="SectionHeading", surface="Secondary", weight="Bold"
-        ).pack(anchor="w")
+            surf,
+            text="Used for backgrounds.",
+        ).pack()
 
-        console_box = tk.Text(
-            console_card,
+        # 5. Form Patterns
+        # ----------------------------------------------------------------
+        self.add_section_header(page, "4. Form Patterns")
+
+        form_frame, form_content = titled_section(
+            page,
+            title="User Registration",
+        )
+        form_frame.pack(fill="x", pady=(0, SPACING_MD))
+
+        fields = [
+            FormField(
+                name="username",
+                label="Username",
+                required=True,
+            ),
+            FormField(
+                name="role",
+                label="Role",
+                field_type="combobox",
+                options=["Admin", "User", "Guest"],
+            ),
+            FormField(
+                name="age",
+                label="Age",
+                field_type="spinbox",
+                options={"from_": 18, "to": 99},
+            ),
+            FormField(
+                name="newsletter",
+                label="Subscribe",
+                field_type="checkbox",
+                default=True,
+            ),
+        ]
+
+        form_result = form_group(form_content, fields=fields)
+        form_result.frame.pack(fill="x")
+
+        form_btn_row, _ = form_button_row(
+            form_content,
+            [("Save", None), ("Cancel", None)],
+        )
+        form_btn_row.pack(fill="x", pady=(SPACING_MD, 0))
+
+        # 6. Metrics & Components
+        # ----------------------------------------------------------------
+        self.add_section_header(page, "5. Composite Components")
+
+        # Metric Row
+        metrics = [
+            {"title": "Active Users", "value": "14.2k", "role": "PRIMARY"},
+            {"title": "Revenue", "value": "$1.2M", "role": "SUCCESS"},
+            {"title": "Server Load", "value": "98%", "role": "ERROR"},
+        ]
+        metric_row_frame, _ = metric_row(page, metrics)
+        metric_row_frame.pack(fill="x", pady=(0, SPACING_MD))
+
+        # Filter Bar
+        filters = [
+            {"name": "search", "label": "Search", "width": 25},
+            {
+                "name": "status",
+                "label": "Status",
+                "type": "combobox",
+                "options": ["All", "Active"],
+            },
+        ]
+        filter_bar_result = filter_bar(page, filters=filters)
+        filter_bar_result.frame.pack(fill="x", pady=(0, SPACING_MD))
+
+        # Empty State
+        empty_frame = section(page, role="SECONDARY")
+        empty_frame.pack(fill="x")
+        empty_state(
+            empty_frame,
+            title="No Results Found",
+            message="Try adjusting filters.",
+        ).pack()
+
+        # 7. Tables
+        # ----------------------------------------------------------------
+        self.add_section_header(page, "6. Data Tables")
+
+        cols = [
+            TableColumn("id", "ID", width=50, anchor="center"),
+            TableColumn("name", "Name", width=150),
+            TableColumn("role", "Role", width=100),
+            TableColumn("status", "Status", width=100, anchor="center"),
+        ]
+
+        table_outer, table_toolbar, table_result = create_table_with_toolbar(
+            page,
+            columns=cols,
             height=6,
-            wrap="word",
-            font=(GUI_FONT_FAMILY[0], GUI_FONT_SIZE_DEFAULT),
-            background=GUI_COLOUR_BG_SECONDARY,
-            borderwidth=1,
-            relief="solid",
         )
-        console_box.pack(fill="both", expand=True, pady=(4, 0))
-        console_box.insert("1.0", "(Console) Ready.\n")
+        table_outer.pack(fill="x", pady=(0, SPACING_XXL))  # Extra padding at bottom
 
-        # --------------------------------------------------------------------------------------------
-        # 3. MIDDLE ROW — 4 Cards × 25%
-        # --------------------------------------------------------------------------------------------
-        mid_row = ttk.Frame(self.main_frame, padding=4)
-        mid_row.pack(fill="x", pady=(0, 20))
+        # Populate Toolbar
+        make_button(
+            table_toolbar,
+            text="Export CSV",
+            variant="SECONDARY",
+        ).pack(side="right")
+        make_label(
+            table_toolbar,
+            text="System Users",
+        ).pack(side="left")
 
-        for col in range(4):
-            mid_row.columnconfigure(col, weight=1)
+        # Populate Table
+        data = [
+            (101, "Alice Johnson", "Admin", "Active"),
+            (102, "Bob Smith", "Editor", "Inactive"),
+            (103, "Charlie Davis", "Viewer", "Active"),
+            (104, "Dana Lee", "Admin", "Active"),
+            (105, "Evan Wright", "Editor", "Pending"),
+        ]
+        insert_rows_zebra(table_result.treeview, data)
 
-        # ============================================================================================
-        # 3A. GOOGLE DRIVE CARD
-        # ============================================================================================
-        gdrive = make_card(mid_row)
-        gdrive.grid(row=0, column=0, sticky="nsew", padx=6)
-
-        make_label(gdrive, "Google Drive / Local", category="SectionHeading",
-                   surface="Secondary", weight="Bold").pack(anchor="w")
-
-        spacer(gdrive, height=6).pack()
-
-        # make_radio(gdrive, "Use Google Drive API").pack(anchor="w")
-        # make_radio(gdrive, "Use Local Mapped Drive").pack(anchor="w")
-
-        spacer(gdrive, height=6).pack()
-
-        # make_button(gdrive, "Browse Local Folder", width=22).pack(anchor="w")
-
-        body_text(gdrive, "Local path: (not selected)", surface="Secondary").pack(anchor="w", pady=(6, 0))
-        body_text(gdrive, "Status: Not mapped", surface="Secondary", weight="Bold").pack(anchor="w")
-
-        # ============================================================================================
-        # 3B. SNOWFLAKE LOGIN CARD
-        # ============================================================================================
-        snow = make_card(mid_row)
-        snow.grid(row=0, column=1, sticky="nsew", padx=6)
-
-        make_label(snow, "Snowflake Login", category="SectionHeading",
-                   surface="Secondary", weight="Bold").pack(anchor="w")
-
-        spacer(snow, height=6).pack()
-
-        rb1 = make_radio(snow, "Use default connection profile")
-        rb1.pack(anchor="w")
-
-        rb2 = make_radio(snow, "Use secondary connection profile")
-        rb2.pack(anchor="w")
-
-        rb3 = make_radio(snow, "Use custom login email")
-        rb3.pack(anchor="w")
-
-        entry_custom = make_entry(snow, width=28)
-        entry_custom.pack(anchor="w", pady=(4, 6))
-
-        make_button(snow, "Connect to Snowflake").pack(anchor="w", pady=(6, 4))
-
-        body_text(snow, "Status: Not connected", surface="Secondary", weight="Bold").pack(anchor="w")
-
-        # ============================================================================================
-        # 3C. ACCOUNTING PERIOD — Summary block + Options block
-        # ============================================================================================
-        acct = make_card(mid_row)
-        acct.grid(row=0, column=2, sticky="nsew", padx=6)
-
-        # Heading
-        make_label(acct, "Accounting Period", category="SectionHeading",
-                   surface="Secondary", weight="Bold").pack(anchor="w")
-
-        spacer(acct, height=4).pack()
-
-        # Summary Block
-        summary_acct = ttk.Frame(acct, padding=(0, 2))
-        summary_acct.pack(fill="x", pady=(0, 6))
-
-        body_text(summary_acct,
-                  "Current accounting period: November 2025",
-                  surface="Secondary", weight="Bold").pack(anchor="w")
-
-        body_text(summary_acct,
-                  "Use the default period or override with a specific YYYY-MM.",
-                  surface="Secondary", wraplength=280).pack(anchor="w", pady=(4, 0))
-
-        divider(acct).pack(fill="x", pady=6)
-
-        # Options Block
-        opt_acct = ttk.Frame(acct)
-        opt_acct.pack(fill="x")
-
-        rb_def = make_radio(opt_acct, "Use default accounting period")
-        rb_def.pack(anchor="w")
-
-        rb_override = make_radio(opt_acct, "Override accounting period")
-        rb_override.pack(anchor="w", pady=(2, 0))
-
-        entry_acct = make_entry(opt_acct, width=18)
-        entry_acct.pack(anchor="w", pady=(4, 0))
-
-        # ============================================================================================
-        # 3D. DATA WAREHOUSE PERIOD — Same layout style
-        # ============================================================================================
-        dwh = make_card(mid_row)
-        dwh.grid(row=0, column=3, sticky="nsew", padx=6)
-
-        make_label(dwh, "Data Warehouse Period", category="SectionHeading",
-                   surface="Secondary", weight="Bold").pack(anchor="w")
-
-        spacer(dwh, height=4).pack()
-
-        summary_dwh = ttk.Frame(dwh, padding=(0, 2))
-        summary_dwh.pack(fill="x", pady=(0, 6))
-
-        body_text(summary_dwh,
-                  "Current DWH period: November 2025",
-                  surface="Secondary", weight="Bold").pack(anchor="w")
-
-        body_text(summary_dwh,
-                  "Use the default DWH period or override with a specific YYYY-MM.",
-                  surface="Secondary", wraplength=280).pack(anchor="w", pady=(4, 0))
-
-        divider(dwh).pack(fill="x", pady=6)
-
-        opt_dwh = ttk.Frame(dwh)
-        opt_dwh.pack(fill="x")
-
-        make_radio(opt_dwh, "Use default DWH period").pack(anchor="w")
-        make_radio(opt_dwh, "Override DWH period").pack(anchor="w", pady=(2, 0))
-
-        make_entry(opt_dwh, width=18).pack(anchor="w", pady=(4, 0))
-
-        # --------------------------------------------------------------------------------------------
-        # 4. BOTTOM ROW — 4 Cards × 25% × 260px
-        # --------------------------------------------------------------------------------------------
-        bottom = ttk.Frame(self.main_frame, padding=4)
-        bottom.pack(fill="x", pady=(0, 8))
-
-        for col in range(4):
-            bottom.columnconfigure(col, weight=1)
-
-        # Provider cards
-        providers = ["Braintree", "Uber Eats", "Deliveroo", "Just Eat"]
-
-        for i, name in enumerate(providers):
-            card = make_card(bottom)
-            card.grid(row=0, column=i, sticky="nsew", padx=6)
-
-            make_label(card, name, category="SectionHeading",
-                       surface="Secondary", weight="Bold").pack(anchor="w")
-
-            spacer(card, height=6).pack()
-
-            body_text(
-                card,
-                "Provider configuration coming soon.",
-                surface="Secondary"
-            ).pack(anchor="w")
+    def add_section_header(self, parent: ttk.Widget, text: str) -> None:
+        """Helper to create consistent section dividers."""
+        container = ttk.Frame(parent)
+        container.pack(fill="x", pady=(SPACING_LG, SPACING_SM))
+        section_title(container, text).pack(anchor="w")
+        divider(container).pack(fill="x", pady=(SPACING_XS, 0))
 
 
-# ====================================================================================================
-# MAIN GUARD
-# ====================================================================================================
 if __name__ == "__main__":
     init_logging()
-    app = SP1Window(title="Connection Launcher (SP1)")
-    app.open_fullscreen()
-    app.mainloop()
+    logger.info("Launching SP1 VisualTestWindow (G00–G03 harness)")
+    app = VisualTestWindow(width=900, height=900)
+    app.center_window()
+    app.run()
